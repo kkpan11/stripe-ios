@@ -226,7 +226,7 @@ extension String.Localized {
     }
 
     static var buy_now_or_pay_later_with_klarna: String {
-        STPLocalizedString("Buy now or pay later with Klarna.", "Klarna buy now or pay later copy")
+        STPLocalizedString("Buy now or pay later with Klarna", "Promotional text for Klarna, displayed in a button that lets the customer pay with Klarna")
     }
     static var klarna_mandate_text: String {
         STPLocalizedString(
@@ -330,6 +330,13 @@ extension String.Localized {
         STPLocalizedString(
             "Simple, secure one-click payments",
             "Subtitle shown on a button allowing a user to select to pay with Link."
+        )
+    }
+
+    static var new_card: String {
+        STPLocalizedString(
+            "New card",
+            "Label of a button that appears on a checkout screen. When tapped, it displays a credit card form. This button is shown next to another button representing the customer's saved card; the word 'new' is meant to differentiate this button's action with the saved card button."
         )
     }
 }
