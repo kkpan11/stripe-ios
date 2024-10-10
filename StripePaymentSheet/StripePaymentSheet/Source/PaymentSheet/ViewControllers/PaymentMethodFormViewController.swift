@@ -20,11 +20,10 @@ class PaymentMethodFormViewController: UIViewController {
     let intent: Intent
     let elementsSession: STPElementsSession
     let paymentMethodType: PaymentSheet.PaymentMethodType
-    let configuration: PaymentSheet.Configuration
+    let configuration: PaymentElementConfiguration
     let analyticsHelper: PaymentSheetAnalyticsHelper
     weak var delegate: PaymentMethodFormViewControllerDelegate?
     var paymentOption: PaymentOption? {
-
         let params = IntentConfirmParams(type: paymentMethodType)
         params.setDefaultBillingDetailsIfNecessary(for: configuration)
 
@@ -82,7 +81,7 @@ class PaymentMethodFormViewController: UIViewController {
         elementsSession: STPElementsSession,
         previousCustomerInput: IntentConfirmParams?,
         formCache: PaymentMethodFormCache,
-        configuration: PaymentSheet.Configuration,
+        configuration: PaymentElementConfiguration,
         headerView: UIView?,
         analyticsHelper: PaymentSheetAnalyticsHelper,
         delegate: PaymentMethodFormViewControllerDelegate
@@ -208,9 +207,25 @@ extension PaymentMethodFormViewController {
     private var usBankAccountFormElement: USBankAccountPaymentMethodElement? { form as? USBankAccountPaymentMethodElement }
     private var instantDebitsFormElement: InstantDebitsPaymentMethodElement? { form as? InstantDebitsPaymentMethodElement }
 
-    private var elementsSessionContext: ElementsSessionContext? {
+    private var elementsSessionContext: ElementsSessionContext {
+        let intentId: ElementsSessionContext.IntentID? = {
+            switch intent {
+            case .paymentIntent(let paymentIntent):
+                return .payment(paymentIntent.stripeId)
+            case .setupIntent(let setupIntent):
+                return .setup(setupIntent.stripeID)
+            case .deferredIntent:
+                return nil
+            }
+        }()
+
         let linkMode = elementsSession.linkSettings?.linkMode
-        return ElementsSessionContext(linkMode: linkMode)
+        return ElementsSessionContext(
+            amount: intent.amount,
+            currency: intent.currency,
+            intentId: intentId,
+            linkMode: linkMode
+        )
     }
 
     private var shouldOverridePrimaryButton: Bool {
@@ -301,7 +316,7 @@ extension PaymentMethodFormViewController {
                 break
             case .completed(let completedResult):
                 if case .financialConnections(let linkedBank) = completedResult {
-                    usBankAccountFormElement.setLinkedBank(linkedBank)
+                    usBankAccountFormElement.linkedBank = linkedBank
                 } else {
                     self.delegate?.updateErrorLabel(for: genericError)
                 }

@@ -481,6 +481,7 @@ extension NativeFlowController {
         for session: StripeAPI.FinancialConnectionsSession,
         completion: @escaping (Result<InstantDebitsLinkedBank, Error>) -> Void
     ) {
+        // Extract bank account ID from the session
         let bankAccountId: String?
         switch session.paymentAccount {
         case .bankAccount(let account):
@@ -491,40 +492,58 @@ extension NativeFlowController {
             bankAccountId = nil
         }
 
+        // Validate bank account ID
         guard let bankAccountId else {
             let error = "InstantDebitsCompletionError: No bank account ID available when trying to create a payment method."
             completion(.failure(FinancialConnectionsSheetError.unknown(debugDescription: error)))
             return
         }
 
+        // Validate consumer session
         guard let consumerSession = dataManager.consumerSession else {
             let error = "InstantDebitsCompletionError: No consumer session available when trying to create a payment method."
             completion(.failure(FinancialConnectionsSheetError.unknown(debugDescription: error)))
             return
         }
 
+        // Bank account details extraction for the linked bank
         var bankAccountDetails: BankAccountDetails?
+        let linkMode = dataManager.elementsSessionContext?.linkMode
         dataManager.createPaymentDetails(
             consumerSessionClientSecret: consumerSession.clientSecret,
             bankAccountId: bankAccountId
-        ).chained { [weak self] paymentDetails -> Future<FinancialConnectionsPaymentMethod> in
+        )
+        .chained { [weak self] paymentDetails -> Future<PaymentMethodIDProvider> in
             guard let self else {
                 return Promise(error: FinancialConnectionsSheetError.unknown(debugDescription: "data source deallocated"))
             }
 
             bankAccountDetails = paymentDetails.redactedPaymentDetails.bankAccountDetails
-            return self.dataManager.createPaymentMethod(
-                consumerSessionClientSecret: consumerSession.clientSecret,
-                paymentDetailsId: paymentDetails.redactedPaymentDetails.id
-            )
+
+            // Decide which API to call based on the payment mode
+            if let linkMode, linkMode.isPantherPayment {
+                return self.dataManager.apiClient.sharePaymentDetails(
+                    consumerSessionClientSecret: consumerSession.clientSecret,
+                    paymentDetailsId: paymentDetails.redactedPaymentDetails.id,
+                    expectedPaymentMethodType: linkMode.expectedPaymentMethodType
+                )
+                .transformed { $0 as PaymentMethodIDProvider }
+            } else {
+                return self.dataManager.createPaymentMethod(
+                    consumerSessionClientSecret: consumerSession.clientSecret,
+                    paymentDetailsId: paymentDetails.redactedPaymentDetails.id
+                )
+                .transformed { $0 as PaymentMethodIDProvider }
+            }
         }
         .observe { result in
             switch result {
             case .success(let paymentMethod):
-                let linkedBank = InstantDebitsLinkedBankImplementation(
+                let linkedBank = InstantDebitsLinkedBank(
                     paymentMethodId: paymentMethod.id,
                     bankName: bankAccountDetails?.bankName,
-                    last4: bankAccountDetails?.last4
+                    last4: bankAccountDetails?.last4,
+                    linkMode: linkMode
                 )
                 completion(.success(linkedBank))
             case .failure(let error):
@@ -1296,7 +1315,8 @@ private func CreatePaneViewController(
             analyticsClient: dataManager.analyticsClient,
             clientSecret: dataManager.clientSecret,
             returnURL: dataManager.returnURL,
-            apiClient: dataManager.apiClient
+            apiClient: dataManager.apiClient,
+            elementsSessionContext: dataManager.elementsSessionContext
         )
         let linkLoginViewController = LinkLoginViewController(dataSource: linkLoginDataSource)
         linkLoginViewController.delegate = nativeFlowController

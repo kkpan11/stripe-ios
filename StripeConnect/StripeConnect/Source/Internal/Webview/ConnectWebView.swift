@@ -14,10 +14,13 @@ import WebKit
  - Camera access
  - Popup windows
  - Opening email links
- - Downloads  TODO MXMOBILE-2485
+ - Downloads 
  */
 @available(iOS 15, *)
 class ConnectWebView: WKWebView {
+
+    /// File URL for a downloaded file
+    var downloadedFile: URL?
 
     private var optionalPresentPopup: ((UIViewController) -> Void)?
 
@@ -40,6 +43,9 @@ class ConnectWebView: WKWebView {
     /// The instance that will handle opening external urls
     let urlOpener: ApplicationURLOpener
 
+    /// The file manager responsible for creating temporary file directories to store downloads
+    let fileManager: FileManager
+
     /// The current version for the SDK
     let sdkVersion: String?
 
@@ -47,8 +53,10 @@ class ConnectWebView: WKWebView {
          configuration: WKWebViewConfiguration,
          // Only override for tests
          urlOpener: ApplicationURLOpener = UIApplication.shared,
+         fileManager: FileManager = .default,
          sdkVersion: String? = StripeAPIConfiguration.STPSDKVersion) {
         self.urlOpener = urlOpener
+        self.fileManager = fileManager
         self.sdkVersion = sdkVersion
         configuration.applicationNameForUserAgent = "- stripe-ios/\(sdkVersion ?? "")"
         super.init(frame: frame, configuration: configuration)
@@ -100,6 +108,32 @@ private extension ConnectWebView {
     // Opens with UIApplication.open, if supported
     func openOnSystem(url: URL) {
         urlOpener.openIfPossible(url)
+    }
+
+    func showErrorAlert(for error: Error?) {
+        // TODO: MXMOBILE-2491 Log analytic when receiving an eror
+        debugPrint(String(describing: error))
+
+        let alert = UIAlertController(
+            title: nil,
+            message: NSError.stp_unexpectedErrorMessage(),
+            preferredStyle: .alert)
+        presentPopup(alert)
+    }
+
+    func cleanupDownloadedFile() {
+        guard let downloadedFile else { return }
+
+        // Delete file since we don't need it anymore
+        DispatchQueue.global(qos: .background).async { [weak self] in
+            try? self?.fileManager.removeItem(at: downloadedFile)
+            // Note: no need to handle failures since:
+            // - It's best-effort to clean up the file
+            // - Expected in cases where there was an error creating the temp file
+        }
+
+        // Remove reference so we can log if we inadvertently get simultaneous downloads
+        self.downloadedFile = nil
     }
 }
 
@@ -158,27 +192,131 @@ extension ConnectWebView: WKNavigationDelegate {
         _ webView: WKWebView,
         decidePolicyFor navigationAction: WKNavigationAction
     ) async -> WKNavigationActionPolicy {
-        // TODO: MXMOBILE-2485 Handle downloads
-        .allow
+        /*
+         `shouldPerformDownload` will be true if the request has MIME types
+         or a `Content-Type` header indicating it's a download or it originated
+         as a JS download.
+
+         NOTE: We sometimes can't know if a request should be a download until
+         after its response is received. Those cases are handled by
+         `decidePolicyFor navigationResponse` below.
+         */
+        navigationAction.shouldPerformDownload ? .download : .allow
     }
 
     func webView(
         _ webView: WKWebView,
         decidePolicyFor navigationResponse: WKNavigationResponse
     ) async -> WKNavigationResponsePolicy {
-        // TODO: MXMOBILE-2485 Handle downloads
-        .allow
+
+        // Downloads will typically originate from a non-allow-listed host (e.g. S3)
+        // so first check if the response is a download before evaluating the host
+
+        // The response should be a download if its Content-Disposition is
+        // shaped like `attachment; filename=payouts.csv`
+        if navigationResponse.canShowMIMEType,
+           let response = navigationResponse.response as? HTTPURLResponse,
+           let contentDisposition = response.value(forHTTPHeaderField: "Content-Disposition"),
+           contentDisposition
+            .split(separator: ";")
+            .map({ $0.trimmingCharacters(in: .whitespaces) })
+            .caseInsensitiveContains("attachment") {
+            return .download
+        }
+
+        return .allow
     }
 
     func webView(_ webView: WKWebView,
                  navigationAction: WKNavigationAction,
                  didBecome download: WKDownload) {
-        // TODO: MXMOBILE-2485 Handle downloads
+        download.delegate = self
     }
 
     func webView(_ webView: WKWebView,
                  navigationResponse: WKNavigationResponse,
                  didBecome download: WKDownload) {
-        // TODO: MXMOBILE-2485 Handle downloads
+        download.delegate = self
+    }
+}
+
+// MARK: - WKDownloadDelegate implementation
+
+@available(iOS 15, *)
+extension ConnectWebView {
+    // This extension is an abstraction layer to implement `WKDownloadDelegate`
+    // functionality and make it testable. There's no way to instantiate
+    // `WKDownload` in tests without causing an EXC_BAD_ACCESS error.
+
+    func download(decideDestinationUsing response: URLResponse,
+                  suggestedFilename: String) async -> URL? {
+        if downloadedFile != nil {
+            // If there's already a downloaded file, it means there were multiple
+            // simultaneous downloads or we didn't clean up the URL correctly
+            // TODO: MXMOBILE-2491 Log error analytic
+            debugPrint("Multiple downloads")
+        }
+
+        // The temporary filename must be unique or the download will fail.
+        // To ensure uniqueness, append a UUID to the directory path in case a
+        // file with the same name was already downloaded from this app.
+        let tempDir = fileManager
+            .temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        do {
+            try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        } catch {
+            showErrorAlert(for: error)
+            return nil
+        }
+
+        downloadedFile = tempDir.appendingPathComponent(suggestedFilename)
+        return downloadedFile
+    }
+
+    func download(didFailWithError error: any Error,
+                  resumeData: Data?) {
+        showErrorAlert(for: error)
+    }
+
+    func downloadDidFinish() {
+        guard let downloadedFile,
+              fileManager.fileExists(atPath: downloadedFile.path) else {
+            // `downloadedFile` should never be nil here
+            // If file doesn't exist, it indicates something went wrong creating
+            // the temp file or the system deleted the temp file too quickly
+            // TODO: MXMOBILE-2491 Log error analytic
+            showErrorAlert(for: nil)
+            cleanupDownloadedFile()
+            return
+        }
+
+        let activityViewController = UIActivityViewController(activityItems: [downloadedFile], applicationActivities: nil)
+        activityViewController.completionWithItemsHandler = { [weak self] _, _, _, _ in
+            self?.cleanupDownloadedFile()
+        }
+        presentPopup(activityViewController)
+    }
+}
+
+// MARK: - WKDownloadDelegate
+
+@available(iOS 15, *)
+extension ConnectWebView: WKDownloadDelegate {
+    func download(_ download: WKDownload,
+                  decideDestinationUsing response: URLResponse,
+                  suggestedFilename: String) async -> URL? {
+        await self.download(decideDestinationUsing: response,
+                            suggestedFilename: suggestedFilename)
+    }
+
+    func download(_ download: WKDownload,
+                  didFailWithError error: any Error,
+                  resumeData: Data?) {
+        self.download(didFailWithError: error, resumeData: resumeData)
+    }
+
+    func downloadDidFinish(_ download: WKDownload) {
+        self.downloadDidFinish()
     }
 }

@@ -1,6 +1,7 @@
-## X.Y.Z X-Y-Z
+## 23.31.1 2024-10-08
 ### PaymentSheet
-* [Fixed] Fixes an issue where ISK was not correctly formatted as a zero-decimal currency when using PaymentSheet or Apple Pay. (Thanks [@Thithip](https://github.com/Thithip)!)
+* [Fixed] Fixed an issue where ISK was not correctly formatted as a zero-decimal currency when using PaymentSheet or Apple Pay. (Thanks [@Thithip](https://github.com/Thithip)!)
+* [Fixed] Fixed an issue where US Bank Account forms would drop form field input when `FlowController.update` is called.
 
 ## 23.31.0 2024-09-23
 ### PaymentSheet
