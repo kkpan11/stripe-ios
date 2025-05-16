@@ -156,13 +156,6 @@ struct PaymentSheetTestPlaygroundSettings: Codable, Equatable {
         case off
     }
 
-    enum PaymentMethodOptionsSetupFutureUsageEnabled: String, PickerEnum {
-        static var enumName: String { "PMO SFU" }
-
-        case on
-        case off
-    }
-
     struct PaymentMethodOptionsSetupFutureUsage: Codable, Equatable {
         // Supports all SFU values
         var card: SetupFutureUsageAll
@@ -593,6 +586,12 @@ struct PaymentSheetTestPlaygroundSettings: Codable, Equatable {
         case allowVisa
     }
 
+    enum LinkInSPMs: String, PickerEnum {
+        static let enumName: String = "Link in SPM"
+        case on
+        case off
+    }
+
     enum ConfigurationStyle: String, PickerEnum {
         static let enumName: String = "Style"
         case automatic
@@ -612,7 +611,6 @@ struct PaymentSheetTestPlaygroundSettings: Codable, Equatable {
     var merchantCountryCode: MerchantCountry
     var apmsEnabled: APMSEnabled
     var supportedPaymentMethods: String?
-    var paymentMethodOptionsSetupFutureUsageEnabled: PaymentMethodOptionsSetupFutureUsageEnabled
     var paymentMethodOptionsSetupFutureUsage: PaymentMethodOptionsSetupFutureUsage
 
     var shippingInfo: ShippingInfo
@@ -653,6 +651,7 @@ struct PaymentSheetTestPlaygroundSettings: Codable, Equatable {
     var formSheetAction: FormSheetAction
     var embeddedViewDisplaysMandateText: DisplaysMandateTextEnabled
     var cardBrandAcceptance: CardBrandAcceptance
+    var linkInSPMs: LinkInSPMs
 
     static func defaultValues() -> PaymentSheetTestPlaygroundSettings {
         return PaymentSheetTestPlaygroundSettings(
@@ -667,7 +666,6 @@ struct PaymentSheetTestPlaygroundSettings: Codable, Equatable {
             amount: ._5099,
             merchantCountryCode: .US,
             apmsEnabled: .on,
-            paymentMethodOptionsSetupFutureUsageEnabled: .off,
             paymentMethodOptionsSetupFutureUsage: PaymentMethodOptionsSetupFutureUsage.defaultValues(),
             shippingInfo: .off,
             applePayEnabled: .on,
@@ -705,7 +703,9 @@ struct PaymentSheetTestPlaygroundSettings: Codable, Equatable {
             collectAddress: .automatic,
             formSheetAction: .continue,
             embeddedViewDisplaysMandateText: .on,
-            cardBrandAcceptance: .all)
+            cardBrandAcceptance: .all,
+            linkInSPMs: .off
+        )
     }
 
     static let nsUserDefaultsKey = "PaymentSheetTestPlaygroundSettings"
