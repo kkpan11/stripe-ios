@@ -299,7 +299,7 @@ extension SavedPaymentMethodCollectionView {
         }
 
         func attributedTextForLabel(paymentMethod: STPPaymentMethod) -> NSAttributedString? {
-            if case .USBankAccount = paymentMethod.type {
+            func makeBankAccountLabel(with text: String) -> NSAttributedString {
                 let iconImage = PaymentSheetImageLibrary.bankIcon(for: nil).withTintColor(appearance.colors.text)
                 let iconImageAttachment = NSTextAttachment()
                 // Inspiration from:
@@ -320,9 +320,18 @@ extension SavedPaymentMethodCollectionView {
 
                 result.append(NSAttributedString(attachment: iconImageAttachment))
                 result.append(NSAttributedString(attachment: padding))
-                result.append(NSAttributedString(string: paymentMethod.paymentSheetLabel))
+                result.append(NSAttributedString(string: text))
                 return result
             }
+
+            if case .USBankAccount = paymentMethod.type {
+                return makeBankAccountLabel(with: paymentMethod.paymentSheetLabel)
+            }
+
+            if let linkPaymentDetails = paymentMethod.linkPaymentDetails, case .bankAccount = linkPaymentDetails {
+                return makeBankAccountLabel(with: linkPaymentDetails.formattedLast4)
+            }
+
             return nil
         }
 
@@ -335,6 +344,8 @@ extension SavedPaymentMethodCollectionView {
                     case .saved(let paymentMethod):
                         if let attributedText = attributedTextForLabel(paymentMethod: paymentMethod) {
                             label.attributedText = attributedText
+                        } else if let linkPaymentDetails = paymentMethod.linkPaymentDetails {
+                            label.text = linkPaymentDetails.formattedLast4
                         } else {
                             label.text = paymentMethod.paymentSheetLabel
                         }
@@ -355,7 +366,7 @@ extension SavedPaymentMethodCollectionView {
                         shadowRoundedRectangle.accessibilityIdentifier = label.text
                         shadowRoundedRectangle.accessibilityLabel = label.text
                         paymentMethodLogo.image = PaymentOption.link(option: .wallet).makeSavedPaymentMethodCellImage(overrideUserInterfaceStyle: overrideUserInterfaceStyle)
-                        paymentMethodLogo.tintColor = UIColor.linkNavLogo.resolvedContrastingColor(
+                        paymentMethodLogo.tintColor = UIColor.linkIconBrand.resolvedContrastingColor(
                             forBackgroundColor: appearance.colors.componentBackground
                         )
                     case .add:
