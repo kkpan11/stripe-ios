@@ -35,7 +35,7 @@ extension PaymentOption {
             case .signUp(_, _, _, _, let confirmParams):
                 return confirmParams.makeIcon(currency: currency, updateImageHandler: updateImageHandler)
             case .wallet, .withPaymentMethod, .withPaymentDetails:
-                return Image.link_logo.makeImage()
+                return Image.link_icon.makeImage()
             }
         case .external(let paymentMethod, _):
             return PaymentSheet.PaymentMethodType.external(paymentMethod).makeImage(
@@ -79,27 +79,37 @@ extension STPPaymentMethod {
     func makeIcon() -> UIImage {
         switch type {
         case .card:
-            return STPImageLibrary.cardBrandImage(for: calculateCardBrandToDisplay())
+            return isLinkPaymentMethod
+                ? Image.link_icon.makeImage()
+                : STPImageLibrary.cardBrandImage(for: calculateCardBrandToDisplay())
         case .USBankAccount:
             return PaymentSheetImageLibrary.bankIcon(
                 for: PaymentSheetImageLibrary.bankIconCode(for: usBankAccount?.bankName)
             )
+        case .link:
+            return Image.link_icon.makeImage()
         default:
-            // If there's no image specific to this PaymentMethod (eg card network logo, bank logo), default to the PaymentMethod type's icon
-            // TODO: This only looks at client-side assets! 
-            let image = type.makeImage()
-            if image == nil {
-                assertionFailure()
-            }
-            return image ?? UIImage()
+            return makeFallbackIcon()
         }
+    }
+
+    private func makeFallbackIcon() -> UIImage {
+        // If there's no image specific to this PaymentMethod (eg card network logo, bank logo), default to the PaymentMethod type's icon
+        // TODO: This only looks at client-side assets!
+        let image = type.makeImage()
+        if image == nil {
+            assertionFailure()
+        }
+        return image ?? UIImage()
     }
 
     /// Returns an image to display inside a cell representing the given payment option in the saved PM collection view
     func makeSavedPaymentMethodCellImage(overrideUserInterfaceStyle: UIUserInterfaceStyle?) -> UIImage {
         switch type {
         case .card:
-            return calculateCardBrandToDisplay().makeSavedPaymentMethodCellImage(overrideUserInterfaceStyle: overrideUserInterfaceStyle)
+            return isLinkPaymentMethod
+                ? Image.link_logo.makeImage()
+                : calculateCardBrandToDisplay().makeSavedPaymentMethodCellImage(overrideUserInterfaceStyle: overrideUserInterfaceStyle)
         case .USBankAccount:
             return PaymentSheetImageLibrary.bankIcon(
                 for: PaymentSheetImageLibrary.bankIconCode(for: usBankAccount?.bankName)
@@ -107,7 +117,7 @@ extension STPPaymentMethod {
         case .SEPADebit:
             return Image.carousel_sepa.makeImage(overrideUserInterfaceStyle: overrideUserInterfaceStyle).withRenderingMode(.alwaysOriginal)
         case .link:
-            return Image.link_logo.makeImage(overrideUserInterfaceStyle: overrideUserInterfaceStyle).withRenderingMode(.alwaysOriginal)
+            return Image.link_logo.makeImage()
         default:
             assertionFailure("\(type) not supported for saved PMs")
             return makeIcon()
@@ -118,13 +128,17 @@ extension STPPaymentMethod {
     func makeSavedPaymentMethodRowImage() -> UIImage {
         switch type {
         case .card:
-            return STPImageLibrary.unpaddedCardBrandImage(for: calculateCardBrandToDisplay())
+            return isLinkPaymentMethod
+                ? Image.link_icon.makeImage()
+                : STPImageLibrary.unpaddedCardBrandImage(for: calculateCardBrandToDisplay())
         case .USBankAccount:
             return PaymentSheetImageLibrary.bankIcon(
                 for: PaymentSheetImageLibrary.bankIconCode(for: usBankAccount?.bankName)
             ).rounded(radius: 3)
         case .SEPADebit:
             return Image.pm_type_sepa.makeImage().withRenderingMode(.alwaysOriginal)
+        case .link:
+            return Image.link_icon.makeImage()
         default:
             assertionFailure("\(type) not supported for saved PMs")
             return makeIcon()

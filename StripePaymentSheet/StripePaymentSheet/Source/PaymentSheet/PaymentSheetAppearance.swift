@@ -48,6 +48,9 @@ public extension PaymentSheet {
         /// Describes the appearance of the Embedded Mobile Payment Element
         public var embeddedPaymentElement: EmbeddedPaymentElement = EmbeddedPaymentElement()
 
+        /// Describes the padding used for all forms
+        public var formInsets: NSDirectionalEdgeInsets = PaymentSheetUI.defaultSheetMargins
+
         // MARK: Fonts
 
         /// Describes the appearance of fonts in PaymentSheet
@@ -318,5 +321,11 @@ public extension PaymentSheet.Appearance {
                 public var spacing: CGFloat = 12.0
             }
         }
+    }
+}
+
+extension PaymentSheet.Appearance {
+    var topFormInsets: NSDirectionalEdgeInsets {
+        return .insets(top: formInsets.top, leading: formInsets.leading, trailing: formInsets.trailing)
     }
 }

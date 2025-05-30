@@ -198,6 +198,7 @@ extension STPAPIClient {
         for consumerSessionClientSecret: String,
         linkedAccountId: String,
         consumerAccountPublishableKey: String?,
+        isDefault: Bool,
         completion: @escaping (Result<ConsumerPaymentDetails, Error>) -> Void
     ) {
         let endpoint: String = "consumers/payment_details"
@@ -209,7 +210,7 @@ extension STPAPIClient {
                 "account": linkedAccountId,
             ],
             "type": "bank_account",
-            "is_default": true,
+            "is_default": isDefault,
         ]
 
         makePaymentDetailsRequest(
@@ -266,16 +267,20 @@ extension STPAPIClient {
     func createLinkAccountSession(
         for consumerSessionClientSecret: String,
         consumerAccountPublishableKey: String?,
+        linkMode: LinkMode? = nil,
+        intentToken: String? = nil,
         completion: @escaping (Result<LinkAccountSession, Error>) -> Void
     ) {
         let endpoint: String = "consumers/link_account_sessions"
 
-        let parameters: [String: Any] = [
+        var parameters: [String: Any] = [
             "credentials": [
                 "consumer_session_client_secret": consumerSessionClientSecret,
             ],
             "request_surface": "ios_payment_element",
         ]
+        parameters["link_mode"] = linkMode?.rawValue
+        parameters["intent_token"] = intentToken
 
         APIRequest<LinkAccountSession>.post(
             with: self,
@@ -352,6 +357,25 @@ extension STPAPIClient {
             consumerPublishableKey: consumerAccountPublishableKey
         ) { (result: Result<DetailsListResponse, Error>) in
             completion(result.map { $0.redactedPaymentDetails })
+        }
+    }
+
+    func listShippingAddress(
+        for consumerSessionClientSecret: String,
+        consumerAccountPublishableKey: String?,
+        completion: @escaping (Result<ShippingAddressesResponse, Error>) -> Void
+    ) {
+        let endPoint = "consumers/shipping_addresses/list"
+        let parameters: [String: Any] = [
+            "credentials": ["consumer_session_client_secret": consumerSessionClientSecret],
+            "request_surface": "ios_payment_element",
+        ]
+        post(
+            resource: endPoint,
+            parameters: parameters,
+            consumerPublishableKey: consumerAccountPublishableKey
+        ) { (result: Result<ShippingAddressesResponse, Error>) in
+            completion(result)
         }
     }
 

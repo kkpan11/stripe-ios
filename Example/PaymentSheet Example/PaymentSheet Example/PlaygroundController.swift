@@ -194,8 +194,6 @@ class PlaygroundController: ObservableObject {
             configuration.cardBrandAcceptance = .allowed(brands: [.visa])
         }
 
-        configuration.shouldReadPaymentMethodOptionsSetupFutureUsage = settings.paymentMethodOptionsSetupFutureUsageEnabled == .on
-
         switch settings.style {
         case .automatic:
             configuration.style = .automatic
@@ -223,6 +221,10 @@ class PlaygroundController: ObservableObject {
         var configuration = EmbeddedPaymentElement.Configuration()
         configuration.formSheetAction = formSheetAction
         configuration.embeddedViewDisplaysMandateText = settings.embeddedViewDisplaysMandateText == .on
+        configuration.rowSelectionBehavior = settings.rowSelectionBehavior == .default ? .default : .immediateAction { [weak self] in
+            self?.embeddedPlaygroundViewController?.dismiss(animated: true)
+            self?.embeddedPlaygroundViewController?.updatePaymentOptionView()
+        }
         configuration.externalPaymentMethodConfiguration = externalPaymentMethodConfiguration
         configuration.customPaymentMethodConfiguration = customPaymentMethodConfiguration
         switch settings.externalPaymentMethods {
@@ -293,8 +295,6 @@ class PlaygroundController: ObservableObject {
         case .allowVisa:
             configuration.cardBrandAcceptance = .allowed(brands: [.visa])
         }
-
-        configuration.shouldReadPaymentMethodOptionsSetupFutureUsage = settings.paymentMethodOptionsSetupFutureUsageEnabled == .on
 
         return configuration
     }
@@ -501,6 +501,9 @@ class PlaygroundController: ObservableObject {
 
             let enableFcLite = newValue.fcLiteEnabled == .on
             FinancialConnectionsSDKAvailability.shouldPreferFCLite = enableFcLite
+
+            PaymentSheet.LinkFeatureFlags.enableLinkFlowControllerChanges = newValue.linkFlowControllerChanges == .on
+            PaymentSheet.LinkFeatureFlags.enableLinkDefaultOptIn = newValue.linkDefaultOptIn == .on
         }.store(in: &subscribers)
 
         // Listen for analytics
@@ -586,6 +589,15 @@ class PlaygroundController: ObservableObject {
     // Completion
 
     func onOptionsCompletion() {
+        if let shippingDetails = self.paymentSheetFlowController?.paymentOption?.shippingDetails {
+            self.addressViewController = .init(
+                configuration: .init(
+                    defaultValues: shippingDetails,
+                    additionalFields: .init(phone: .optional)
+                ),
+                delegate: self
+            )
+        }
         // Tell our observer to refresh
         objectWillChange.send()
     }
@@ -695,6 +707,7 @@ extension PlaygroundController {
             "customer_session_payment_method_remove_last": settings.paymentMethodRemoveLast.rawValue,
             "customer_session_payment_method_redisplay": settings.paymentMethodRedisplay.rawValue,
             "customer_session_payment_method_set_as_default": settings.paymentMethodSetAsDefault.rawValue,
+            "payment_method_options_setup_future_usage": settings.paymentMethodOptionsSetupFutureUsage.toDictionary(),
             //            "set_shipping_address": true // Uncomment to make server vend PI with shipping address populated
         ] as [String: Any]
         if settingsToLoad.apmsEnabled == .off, let supportedPaymentMethods = settingsToLoad.supportedPaymentMethods, !supportedPaymentMethods.isEmpty {
@@ -708,9 +721,6 @@ extension PlaygroundController {
         }
         if settings.paymentMethodSave == .disabled && settings.allowRedisplayOverride != .notSet {
             body["customer_session_payment_method_save_allow_redisplay_override"] = settings.allowRedisplayOverride.rawValue
-        }
-        if settingsToLoad.paymentMethodOptionsSetupFutureUsageEnabled == .on {
-            body["payment_method_options_setup_future_usage"] = settings.paymentMethodOptionsSetupFutureUsage.toDictionary()
         }
         makeRequest(with: checkoutEndpoint, body: body) { data, response, error in
             // If the completed load state doesn't represent the current state, discard this result
@@ -911,8 +921,7 @@ extension PlaygroundController {
                 let data = data,
                 let json = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any]
             else {
-                if let data = data,
-                   (response as? HTTPURLResponse)?.statusCode == 400 {
+                if let data, (response as? HTTPURLResponse)?.statusCode == 400 {
                     let errorMessage = String(decoding: data, as: UTF8.self)
                     // read the error message
                     intentCreationCallback(.failure(ConfirmHandlerError.confirmError(errorMessage)))

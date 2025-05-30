@@ -7,6 +7,7 @@
 
 import Foundation
 import StripeCoreTestUtils
+@_spi(STP) import StripePayments
 @_spi(STP) @testable import StripePaymentSheet
 import UIKit
 
@@ -78,6 +79,35 @@ class PaymentMethodRowButtonSnapshotTests: STPSnapshotTestCase {
             shouldAnimateOnPress: false,
             didTap: { _ in }
         )
+        verify(rowButton)
+    }
+
+    func testPaymentMethodRowButton_newPaymentMethod_linkType_unselected() {
+        var card = STPPaymentMethod._testLink()
+        card.linkPaymentDetails = .card(
+            LinkPaymentDetails.Card(
+                id: "csmr_123",
+                displayName: "Visa Credit",
+                expMonth: 12,
+                expYear: 2030,
+                last4: "4242",
+                brand: .visa
+            )
+        )
+        let rowButton = SavedPaymentMethodRowButton(paymentMethod: card, appearance: .default)
+        verify(rowButton)
+    }
+
+    func testPaymentMethodRowButton_newPaymentMethod_linkCardBrandType_unselected() {
+        var card = STPPaymentMethod._testCard()
+        card.linkPaymentDetails = .bankAccount(
+            LinkPaymentDetails.BankDetails(
+                id: "csmr_123",
+                bankName: "Stripe Bank",
+                last4: "4242"
+            )
+        )
+        let rowButton = SavedPaymentMethodRowButton(paymentMethod: card, appearance: .default)
         verify(rowButton)
     }
 

@@ -54,12 +54,14 @@ class PaymentSheetSnapshotTests: STPSnapshotTestCase {
             APIStubbedTestCase.stubAllOutgoingRequests()
         }
         stubAllImageRequests()
+        PaymentSheet.resetCustomer()
     }
 
     public override func tearDown() {
         super.tearDown()
         HTTPStubs.removeAllStubs()
         configuration = PaymentSheet.Configuration()
+        PaymentSheet.resetCustomer()
     }
 
     private func stubbedAPIClient() -> STPAPIClient {
@@ -1494,6 +1496,7 @@ fileprivate extension PaymentSheet.Appearance {
             offset: CGSize(width: 0, height: 2),
             radius: 4
         )
+        appearance.formInsets = NSDirectionalEdgeInsets(top: 30, leading: 50, bottom: 70, trailing: 10)
 
         // Customize the colors
         var colors = PaymentSheet.Appearance.Colors()
