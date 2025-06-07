@@ -48,6 +48,24 @@ public extension PaymentSheet {
         /// Describes the appearance of the Embedded Mobile Payment Element
         public var embeddedPaymentElement: EmbeddedPaymentElement = EmbeddedPaymentElement()
 
+        /// The corner radius used for Mobile Payment Element sheets
+        /// - Note: The behavior of this property is consistent with the behavior of corner radius on `CALayer`
+        @_spi(AppearanceAPIAdditionsPreview)
+        public var sheetCornerRadius: CGFloat = 12.0
+
+        /// The insets used for all text fields in PaymentSheet
+        /// - Note: Controls the internal padding within text fields for more manual control over text field spacing
+        @_spi(AppearanceAPIAdditionsPreview)
+        public var textFieldInsets: NSDirectionalEdgeInsets = NSDirectionalEdgeInsets(top: 4, leading: 11, bottom: 4, trailing: 11)
+
+        /// Describes the padding used for all forms
+        public var formInsets: NSDirectionalEdgeInsets = PaymentSheetUI.defaultSheetMargins
+
+        /// Controls the vertical spacing between distinct sections in the form (e.g., between payment fields and billing address).
+        /// - Note: This spacing is applied between different conceptual sections of the form, not between individual input fields within a section.
+        @_spi(AppearanceAPIAdditionsPreview)
+        public var sectionSpacing: CGFloat = 12.0
+
         // MARK: Fonts
 
         /// Describes the appearance of fonts in PaymentSheet
@@ -71,6 +89,21 @@ public extension PaymentSheet {
             /// The font family of this font is used throughout PaymentSheet. PaymentSheet uses this font at multiple weights (e.g., regular, medium, semibold) if they exist.
             /// - Note: The size and weight of the font is ignored. To adjust font sizes, see `sizeScaleFactor`.
             public var base: UIFont = UIFont.systemFont(ofSize: UIFont.labelFontSize, weight: .regular)
+
+            /// Custom font configuration for specific text styles
+            /// - Note: When set, these fonts override the default font calculations for their respective text styles
+            @_spi(AppearanceAPIAdditionsPreview) public var custom: Custom = Custom()
+
+            /// Describes custom fonts for specific text styles in PaymentSheet
+            @_spi(AppearanceAPIAdditionsPreview) public struct Custom: Equatable {
+
+                /// Creates a `PaymentSheet.Appearance.Font.Custom` with default values
+                @_spi(AppearanceAPIAdditionsPreview) public init() {}
+
+                /// The font used for headlines (e.g., "Add your payment information")
+                /// - Note: If `nil`, uses the calculated font based on `base` and `sizeScaleFactor`
+                @_spi(AppearanceAPIAdditionsPreview) public var headline: UIFont?
+            }
         }
 
         // MARK: Colors
@@ -229,6 +262,15 @@ public extension PaymentSheet {
             /// The shadow of the primary button
             /// - Note: If `nil`, `appearance.shadow` will be used as the primary button shadow
             public var shadow: Shadow?
+
+            /// The height of the primary button
+            public var height: CGFloat = 44 {
+                willSet {
+                    if newValue <= 0.0 {
+                        assertionFailure("height must be a value greater than zero")
+                    }
+                }
+            }
         }
     }
 }
@@ -278,7 +320,7 @@ public extension PaymentSheet.Appearance {
                 public var separatorColor: UIColor?
 
                 /// The insets of the separator line between rows
-                /// - Note: If `nil`, defaults to `UIEdgeInsets(top: 0, left: 30, bottom: 0, right: 0)` for style of `flatWithRadio` and to `UIEdgeInsets.zero` for style of `floatingButton`.
+                /// - Note: If `nil`, defaults to `UIEdgeInsets(top: 0, left: 30, bottom: 0, right: 0)` for style of `flatWithRadio` and to `UIEdgeInsets.zero` for style of `flatWithCheckmark`.
                 public var separatorInsets: UIEdgeInsets?
 
                 /// Determines if the top separator is visible at the top of the Embedded Mobile Payment Element
@@ -318,5 +360,11 @@ public extension PaymentSheet.Appearance {
                 public var spacing: CGFloat = 12.0
             }
         }
+    }
+}
+
+extension PaymentSheet.Appearance {
+    var topFormInsets: NSDirectionalEdgeInsets {
+        return .insets(top: formInsets.top, leading: formInsets.leading, trailing: formInsets.trailing)
     }
 }

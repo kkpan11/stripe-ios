@@ -361,22 +361,27 @@ extension EmbeddedPaymentElement.PaymentOptionDisplayData {
             label = String.Localized.apple_pay
             paymentMethodType = "apple_pay"
             billingDetails = nil
+            shippingDetails = nil
         case .saved(let paymentMethod, let confirmParams):
             label = paymentMethod.paymentOptionLabel(confirmParams: confirmParams)
             paymentMethodType = paymentMethod.type.identifier
             billingDetails = paymentMethod.billingDetails?.toPaymentSheetBillingDetails()
+            shippingDetails = nil
         case .new(let confirmParams):
             label = confirmParams.paymentSheetLabel
             paymentMethodType = confirmParams.paymentMethodType.identifier
             billingDetails = confirmParams.paymentMethodParams.billingDetails?.toPaymentSheetBillingDetails()
+            shippingDetails = nil
         case .link(let option):
             label = option.paymentSheetLabel
             paymentMethodType = STPPaymentMethodType.link.identifier
             billingDetails = option.billingDetails?.toPaymentSheetBillingDetails()
+            shippingDetails = option.shippingAddress
         case .external(let paymentMethod, let stpBillingDetails):
             label = paymentMethod.displayText
             paymentMethodType = paymentMethod.type
             billingDetails = stpBillingDetails.toPaymentSheetBillingDetails()
+            shippingDetails = nil
         }
     }
 }
@@ -443,10 +448,10 @@ extension EmbeddedPaymentElement: EmbeddedFormViewControllerDelegate {
             }
         }
         embeddedFormViewController.dismiss(animated: true)
+        informDelegateIfPaymentOptionUpdated()
         if case .immediateAction(let didSelectPaymentOption) = configuration.rowSelectionBehavior {
             didSelectPaymentOption()
         }
-        informDelegateIfPaymentOptionUpdated()
     }
 
     func getChangeButtonState(for type: RowButtonType) -> (shouldShowChangeButton: Bool, sublabel: String?) {

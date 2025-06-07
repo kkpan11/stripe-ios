@@ -67,8 +67,7 @@ class LinkURLGenerator {
         // Get email from the previously fetched account in the Link button, or the billing details
         var customerEmail = LinkAccountContext.shared.account?.email
 
-        if customerEmail == nil,
-           let defaultBillingEmail = configuration.defaultBillingDetails.email {
+        if customerEmail == nil, let defaultBillingEmail = configuration.defaultBillingDetails.email, LinkEmailHelper.canLookupEmail(defaultBillingEmail) {
             customerEmail = defaultBillingEmail
         }
 
@@ -113,7 +112,7 @@ class LinkURLGenerator {
                              loggerMetadata: loggerMetadata,
                              locale: Locale.current.toLanguageTag(),
                              intentMode: intentMode,
-                             setupFutureUsage: configuration.shouldReadPaymentMethodOptionsSetupFutureUsage ? intent.isSetupFutureUsageSet(for: linkPaymentMethodType) : intent.isSettingUp,
+                             setupFutureUsage: intent.isSetupFutureUsageSet(for: linkPaymentMethodType),
                              cardBrandChoice: cardBrandChoiceInfo,
                              linkFundingSources: linkFundingSources)
     }

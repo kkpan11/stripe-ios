@@ -141,7 +141,7 @@ extension PayWithLinkViewController {
             super.viewDidLoad()
             addChild(addPaymentMethodVC)
 
-            view.backgroundColor = .linkBackground
+            view.backgroundColor = .linkSurfacePrimary
 
             addPaymentMethodVC.view.backgroundColor = .clear
             errorLabel.isHidden = true
@@ -160,21 +160,9 @@ extension PayWithLinkViewController {
             stackView.setCustomSpacing(LinkUI.extraLargeContentSpacing, after: addPaymentMethodVC.view)
             stackView.translatesAutoresizingMaskIntoConstraints = false
 
-            let scrollView = LinkKeyboardAvoidingScrollView()
-            #if !os(visionOS)
-            scrollView.keyboardDismissMode = .interactive
-            #endif
-            scrollView.addSubview(stackView)
-
-            contentView.addAndPinSubview(scrollView)
+            contentView.addAndPinSubviewToSafeArea(stackView)
 
             NSLayoutConstraint.activate([
-                stackView.topAnchor.constraint(equalTo: scrollView.topAnchor, constant: preferredContentMargins.top),
-                stackView.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor, constant: -preferredContentMargins.bottom),
-                stackView.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor),
-                stackView.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor),
-                stackView.widthAnchor.constraint(equalTo: scrollView.widthAnchor),
-
                 titleLabel.leadingAnchor.constraint(
                     equalTo: stackView.safeAreaLayoutGuide.leadingAnchor,
                     constant: preferredContentMargins.leading),
@@ -224,6 +212,7 @@ extension PayWithLinkViewController {
             feedbackGenerator.prepare()
             #endif
             confirmButton.update(state: .processing)
+            coordinator?.allowSheetDismissal(false)
 
             linkAccount.createPaymentDetails(with: confirmParams.paymentMethodParams) { [weak self] result in
                 guard let self = self else {
@@ -241,6 +230,11 @@ extension PayWithLinkViewController {
                         // part of the payment details' billing information.
                         billingPhoneNumber: confirmParams.paymentMethodParams.billingDetails?.phone
                     )
+
+                    guard !context.launchedFromFlowController else {
+                        coordinator?.handlePaymentDetailsSelected(paymentDetails, confirmationExtras: confirmationExtras)
+                        return
+                    }
 
                     self.coordinator?.confirm(
                         with: self.linkAccount,
@@ -263,6 +257,7 @@ extension PayWithLinkViewController {
                         self?.feedbackGenerator.notificationOccurred(.success)
                         #endif
                         self?.confirmButton.update(state: state, animated: true) {
+                            self?.coordinator?.allowSheetDismissal(true)
                             if state == .succeeded {
                                 self?.coordinator?.finish(withResult: result, deferredIntentConfirmationType: deferredIntentConfirmationType)
                             }
@@ -274,6 +269,7 @@ extension PayWithLinkViewController {
                     #endif
                     self.confirmButton.update(state: .enabled, animated: true)
                     self.updateErrorLabel(for: error)
+                    self.coordinator?.allowSheetDismissal(true)
                 }
             }
         }
@@ -314,14 +310,12 @@ extension PayWithLinkViewController {
         @objc
         func cancelButtonTapped(_ sender: Button) {
             if isAddingFirstPaymentMethod {
-                coordinator?.cancel()
+                coordinator?.cancel(shouldReturnToPaymentSheet: false)
             } else {
-                navigationController?.popViewController(animated: true)
+                _ = bottomSheetController?.popContentViewController()
             }
         }
-
     }
-
 }
 
 extension PayWithLinkViewController.NewPaymentViewController: AddPaymentMethodViewControllerDelegate {

@@ -86,7 +86,7 @@ extension PaymentSheet {
         var linkUIAnalyticsValue: String? {
             if case .link(let option) = self {
                 switch option {
-                case .withPaymentDetails(let account, _, _):
+                case .withPaymentDetails(let account, _, _, _):
                     if account.hasCompletedSMSVerification {
                         // This was a returning user who logged in
                         return "native-returning"
@@ -131,6 +131,9 @@ extension PaymentSheet {
             /// The billing details associated with the customer's desired payment method
             public let billingDetails: PaymentSheet.BillingDetails?
 
+            /// The shipping details associated with the current customer.
+            @_spi(STP) public let shippingDetails: AddressViewController.Configuration.DefaultAddressDetails?
+
             /// A string representation of the customer's desired payment method
             /// - If this is a Stripe payment method, see https://stripe.com/docs/api/payment_methods/object#payment_method_object-type for possible values.
             /// - If this is an external payment method, see https://stripe.com/docs/payments/external-payment-methods?platform=ios#available-external-payment-methods for possible values.
@@ -144,22 +147,27 @@ extension PaymentSheet {
                     label = String.Localized.apple_pay
                     paymentMethodType = "apple_pay"
                     billingDetails = nil
+                    shippingDetails = nil
                 case .saved(let paymentMethod, let confirmParams):
                     label = paymentMethod.paymentOptionLabel(confirmParams: confirmParams)
                     paymentMethodType = paymentMethod.type.identifier
                     billingDetails = paymentMethod.billingDetails?.toPaymentSheetBillingDetails()
+                    shippingDetails = nil
                 case .new(let confirmParams):
                     label = confirmParams.paymentSheetLabel
                     paymentMethodType = confirmParams.paymentMethodType.identifier
                     billingDetails = confirmParams.paymentMethodParams.billingDetails?.toPaymentSheetBillingDetails()
+                    shippingDetails = nil
                 case .link(let option):
                     label = option.paymentSheetLabel
                     paymentMethodType = option.paymentMethodType
                     billingDetails = option.billingDetails?.toPaymentSheetBillingDetails()
+                    shippingDetails = option.shippingAddress
                 case .external(let paymentMethod, let stpBillingDetails):
                     label = paymentMethod.displayText
                     paymentMethodType = paymentMethod.type
                     billingDetails = stpBillingDetails.toPaymentSheetBillingDetails()
+                    shippingDetails = nil
                 }
             }
         }
@@ -181,7 +189,17 @@ extension PaymentSheet {
         var elementsSession: STPElementsSession { viewController.elementsSession }
         lazy var paymentHandler: STPPaymentHandler = { STPPaymentHandler(apiClient: configuration.apiClient) }()
         var viewController: FlowControllerViewControllerProtocol
+
         private var presentPaymentOptionsCompletion: (() -> Void)?
+        private var didDismissLinkVerificationDialog: Bool = false
+
+        // If a WalletButtonsView is currently visible
+        var walletButtonsShownExternally: Bool = false {
+            didSet {
+                // Update payment method options
+                self.updateForWalletButtonsView()
+            }
+        }
 
         /// The desired, valid (ie passed client-side checks) payment option from the underlying payment options VC.
         private var _paymentOption: PaymentOption? {
@@ -190,6 +208,21 @@ extension PaymentSheet {
             }
 
             return viewController.selectedPaymentOption
+        }
+
+        private var canPresentLinkInPlaceOfFlowController: Bool {
+            guard elementsSession.enableFlowControllerRUX(for: configuration) else {
+                return false
+            }
+
+            let currentSession = LinkAccountContext.shared.account?.currentSession
+
+            if currentSession?.hasStartedSMSVerification == true && didDismissLinkVerificationDialog {
+                // We asked the user to sign in once, and they declined.
+                return false
+            }
+
+            return _paymentOption?.canLaunchLink ?? false
         }
 
         // Stores the state of the most recent call to the update API
@@ -223,7 +256,7 @@ extension PaymentSheet {
             self.configuration = configuration
             self.analyticsHelper = analyticsHelper
             self.analyticsHelper.logInitialized()
-            self.viewController = Self.makeViewController(configuration: configuration, loadResult: loadResult, analyticsHelper: analyticsHelper)
+            self.viewController = Self.makeViewController(configuration: configuration, loadResult: loadResult, analyticsHelper: analyticsHelper, walletButtonsShownExternally: self.walletButtonsShownExternally)
             self.viewController.flowControllerDelegate = self
         }
 
@@ -365,7 +398,54 @@ extension PaymentSheet {
                 self.isPresented = true
             }
 
+            if canPresentLinkInPlaceOfFlowController {
+                presentNativeLinkInPlaceOfFlowController(
+                    from: presentingViewController,
+                    selectedPaymentDetailsID: _paymentOption?.currentLinkPaymentMethod,
+                    returnToPaymentSheet: showPaymentOptions
+                )
+                return
+            }
+
             showPaymentOptions()
+        }
+
+        private func presentNativeLinkInPlaceOfFlowController(
+            from presentingViewController: UIViewController,
+            selectedPaymentDetailsID: String? = nil,
+            returnToPaymentSheet: @escaping () -> Void
+        ) {
+            let verificationDismissed: () -> Void = { [weak self] in
+                self?.didDismissLinkVerificationDialog = true
+                returnToPaymentSheet()
+            }
+
+            let completionCallback: (PaymentSheet.LinkConfirmOption?, Bool) -> Void = { [weak self] confirmOption, shouldReturnToPaymentSheet in
+                guard let self else { return }
+
+                if let confirmOption {
+                    self.viewController.linkConfirmOption = confirmOption
+                }
+
+                if shouldReturnToPaymentSheet {
+                    self.viewController.linkConfirmOption = nil
+                    returnToPaymentSheet()
+                    return
+                }
+
+                self.presentPaymentOptionsCompletion?()
+                self.isPresented = false
+            }
+
+            presentingViewController.presentNativeLink(
+                selectedPaymentDetailsID: selectedPaymentDetailsID,
+                configuration: configuration,
+                intent: intent,
+                elementsSession: elementsSession,
+                analyticsHelper: analyticsHelper,
+                verificationDismissed: verificationDismissed,
+                callback: completionCallback
+            )
         }
 
         /// Completes the payment or setup.
@@ -486,6 +566,7 @@ extension PaymentSheet {
                         configuration: self.configuration,
                         loadResult: loadResult,
                         analyticsHelper: analyticsHelper,
+                        walletButtonsShownExternally: walletButtonsShownExternally,
                         previousPaymentOption: self._paymentOption
                     )
                     self.viewController.flowControllerDelegate = self
@@ -501,6 +582,18 @@ extension PaymentSheet {
                     completion(error)
                 }
             }
+        }
+
+        func updateForWalletButtonsView() {
+            // Recreate the view controller
+            self.viewController = Self.makeViewController(
+                configuration: self.configuration,
+                loadResult: self.viewController.loadResult,
+                analyticsHelper: analyticsHelper,
+                walletButtonsShownExternally: self.walletButtonsShownExternally,
+                previousPaymentOption: self._paymentOption
+            )
+            self.viewController.flowControllerDelegate = self
         }
 
         // MARK: Internal helper methods
@@ -524,6 +617,7 @@ extension PaymentSheet {
             configuration: Configuration,
             loadResult: PaymentSheetLoader.LoadResult,
             analyticsHelper: PaymentSheetAnalyticsHelper,
+            walletButtonsShownExternally: Bool,
             previousPaymentOption: PaymentOption? = nil
         ) -> FlowControllerViewControllerProtocol {
             switch configuration.paymentMethodLayout {
@@ -540,6 +634,7 @@ extension PaymentSheet {
                     loadResult: loadResult,
                     isFlowController: true,
                     analyticsHelper: analyticsHelper,
+                    walletButtonsShownExternally: walletButtonsShownExternally,
                     previousPaymentOption: previousPaymentOption
                 )
             }
@@ -614,9 +709,48 @@ internal protocol FlowControllerViewControllerProtocol: BottomSheetContentViewCo
     var error: Error? { get }
     var intent: Intent { get }
     var elementsSession: STPElementsSession { get }
+    var linkConfirmOption: PaymentSheet.LinkConfirmOption? { get set }
     var selectedPaymentOption: PaymentOption? { get }
+    var loadResult: PaymentSheetLoader.LoadResult { get }
     /// The type of the Stripe payment method that's currently selected in the UI for new and saved PMs. Returns nil Apple Pay and .stripe(.link) for Link.
     /// Note that, unlike selectedPaymentOption, this is non-nil even if the PM form is invalid.
     var selectedPaymentMethodType: PaymentSheet.PaymentMethodType? { get }
     var flowControllerDelegate: FlowControllerViewControllerDelegate? { get set }
+}
+
+extension PaymentOption {
+    var canLaunchLink: Bool {
+        let hasLinkAccount = LinkAccountContext.shared.account?.isRegistered ?? false
+        switch self {
+        case .saved(let paymentMethod, _):
+            return paymentMethod.isLinkPaymentMethod && hasLinkAccount
+        case .link(let confirmOption):
+            switch confirmOption {
+            case .signUp, .withPaymentMethod:
+                return false
+            case .wallet:
+                return hasLinkAccount
+            case .withPaymentDetails:
+                return true
+            }
+        case .applePay, .new, .external:
+            return false
+        }
+    }
+
+    var currentLinkPaymentMethod: String? {
+        switch self {
+        case .saved(let paymentMethod, _):
+            return paymentMethod.linkPaymentDetails?.id
+        case .link(let confirmOption):
+            switch confirmOption {
+            case .wallet, .signUp, .withPaymentMethod:
+                return nil
+            case .withPaymentDetails(_, let paymentDetails, _, _):
+                return paymentDetails.stripeID
+            }
+        case .applePay, .new, .external:
+            return nil
+        }
+    }
 }
