@@ -29,6 +29,10 @@ class BottomSheetViewController: UIViewController, BottomSheetPresentable {
         static let keyboardAvoidanceEdgePadding: CGFloat = 16
     }
 
+    var sheetCornerRadius: CGFloat? {
+        BottomSheetTransitioningDelegate.appearance.sheetCornerRadius
+    }
+
     // MARK: - Views
     lazy var scrollView: UIScrollView = {
         let scrollView = UIScrollView()
@@ -185,7 +189,6 @@ class BottomSheetViewController: UIViewController, BottomSheetPresentable {
         }
         let oldContentViewController = contentViewController
         contentViewController = newContentViewController
-
         // Handle edge case where BottomSheetPresentationAnimator is mid-presentation
         // We need to finish *that* transition before starting this one.
         completeBottomSheetPresentationTransition?(true)
@@ -338,7 +341,7 @@ class BottomSheetViewController: UIViewController, BottomSheetPresentable {
         ])
 
         contentContainerView.translatesAutoresizingMaskIntoConstraints = false
-        contentContainerView.directionalLayoutMargins = PaymentSheetUI.defaultSheetMargins
+        contentContainerView.directionalLayoutMargins = appearance.formInsets
         scrollView.addSubview(contentContainerView)
 
         // Give the scroll view a desired height

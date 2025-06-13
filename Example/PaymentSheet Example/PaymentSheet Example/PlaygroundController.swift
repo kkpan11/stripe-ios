@@ -58,9 +58,9 @@ class PlaygroundController: ObservableObject {
                     return request
                 },
                 authorizationResultHandler: { result, completion in
-                    //                  Hardcoded order details:
-                    //                  In a real app, you should fetch these details from your service and call the completion() block on
-                    //                  the main queue.
+                    // Hardcoded order details:
+                    // In a real app, you should fetch these details from your service and call the completion() block on
+                    // the main queue.
                     result.orderDetails = PKPaymentOrderDetails(
                         orderTypeIdentifier: "com.myapp.order",
                         orderIdentifier: "ABC123-AAAA-1111",
@@ -69,6 +69,55 @@ class PlaygroundController: ObservableObject {
                     completion(result)
                 }
             )
+            return PaymentSheet.ApplePayConfiguration(
+                merchantId: "merchant.com.stripe.umbrella.test",
+                merchantCountryCode: "US",
+                buttonType: buttonType,
+                customHandlers: customHandlers)
+        }
+
+        if #available(iOS 16.0, *), settings.applePayEnabled == .onWithShipping {
+            let customHandlers = PaymentSheet.ApplePayConfiguration.Handlers(
+                paymentRequestHandler: { request in
+                    request.shippingMethods = self.shippingMethods()
+                    request.requiredShippingContactFields = [.name, .postalAddress]
+                    return request
+                },
+                authorizationResultHandler: { result, completion in
+                    // Hardcoded order details:
+                    // In a real app, you should fetch these details from your service and call the completion() block on
+                    // the main queue.
+                    result.orderDetails = PKPaymentOrderDetails(
+                        orderTypeIdentifier: "com.myapp.order",
+                        orderIdentifier: "ABC123-AAAA-1111",
+                        webServiceURL: URL(string: "https://my-backend.example.com/apple-order-tracking-backend")!,
+                        authenticationToken: "abc123")
+                    completion(result)
+                },
+                shippingMethodUpdateHandler: { shippingMethod, completion in
+                    // Get tax rate from somewhere (either stored from last contact update or default)
+                    let (taxName, taxRate) = self.currentTaxRate ?? ("Sales Tax (5%)", 0.05)  // Default 5%
+                    let summaryItems = self.createSummaryItems(shippingMethod: shippingMethod,
+                                                               taxRate: taxRate,
+                                                               taxName: taxName)
+                    let update = PKPaymentRequestShippingMethodUpdate(paymentSummaryItems: summaryItems)
+                    completion(update)
+                },
+                shippingContactUpdateHandler: { contact, completion in
+                    let (taxName, taxRate) = self.determineTaxRate(contact: contact)
+                    self.currentTaxRate = (taxName, taxRate)
+
+                    let availableShippingMethods = self.shippingMethods()
+                    let defaultShippingMethod = availableShippingMethods.first!
+
+                    let summaryItems = self.createSummaryItems(shippingMethod: defaultShippingMethod,
+                                                               taxRate: taxRate,
+                                                               taxName: taxName)
+                    let update = PKPaymentRequestShippingContactUpdate(errors: nil,
+                                                                       paymentSummaryItems: summaryItems,
+                                                                       shippingMethods: availableShippingMethods)
+                    completion(update)
+                })
             return PaymentSheet.ApplePayConfiguration(
                 merchantId: "merchant.com.stripe.umbrella.test",
                 merchantCountryCode: "US",
@@ -85,6 +134,8 @@ class PlaygroundController: ObservableObject {
             return nil
         }
     }
+    private var currentTaxRate: (String, Double)?
+
     var linkConfiguration: PaymentSheet.LinkConfiguration {
         switch settings.linkDisplay {
         case .automatic:
@@ -194,8 +245,6 @@ class PlaygroundController: ObservableObject {
             configuration.cardBrandAcceptance = .allowed(brands: [.visa])
         }
 
-        configuration.shouldReadPaymentMethodOptionsSetupFutureUsage = settings.paymentMethodOptionsSetupFutureUsageEnabled == .on
-
         switch settings.style {
         case .automatic:
             configuration.style = .automatic
@@ -223,6 +272,10 @@ class PlaygroundController: ObservableObject {
         var configuration = EmbeddedPaymentElement.Configuration()
         configuration.formSheetAction = formSheetAction
         configuration.embeddedViewDisplaysMandateText = settings.embeddedViewDisplaysMandateText == .on
+        configuration.rowSelectionBehavior = settings.rowSelectionBehavior == .default ? .default : .immediateAction { [weak self] in
+            self?.embeddedPlaygroundViewController?.dismiss(animated: true)
+            self?.embeddedPlaygroundViewController?.updatePaymentOptionView()
+        }
         configuration.externalPaymentMethodConfiguration = externalPaymentMethodConfiguration
         configuration.customPaymentMethodConfiguration = customPaymentMethodConfiguration
         switch settings.externalPaymentMethods {
@@ -293,8 +346,6 @@ class PlaygroundController: ObservableObject {
         case .allowVisa:
             configuration.cardBrandAcceptance = .allowed(brands: [.visa])
         }
-
-        configuration.shouldReadPaymentMethodOptionsSetupFutureUsage = settings.paymentMethodOptionsSetupFutureUsageEnabled == .on
 
         return configuration
     }
@@ -501,6 +552,8 @@ class PlaygroundController: ObservableObject {
 
             let enableFcLite = newValue.fcLiteEnabled == .on
             FinancialConnectionsSDKAvailability.shouldPreferFCLite = enableFcLite
+
+            PaymentSheet.LinkFeatureFlags.enableLinkFlowControllerChanges = newValue.linkFlowControllerChanges == .on
         }.store(in: &subscribers)
 
         // Listen for analytics
@@ -586,6 +639,15 @@ class PlaygroundController: ObservableObject {
     // Completion
 
     func onOptionsCompletion() {
+        if let shippingDetails = self.paymentSheetFlowController?.paymentOption?.shippingDetails {
+            self.addressViewController = .init(
+                configuration: .init(
+                    defaultValues: shippingDetails,
+                    additionalFields: .init(phone: .optional)
+                ),
+                delegate: self
+            )
+        }
         // Tell our observer to refresh
         objectWillChange.send()
     }
@@ -695,6 +757,7 @@ extension PlaygroundController {
             "customer_session_payment_method_remove_last": settings.paymentMethodRemoveLast.rawValue,
             "customer_session_payment_method_redisplay": settings.paymentMethodRedisplay.rawValue,
             "customer_session_payment_method_set_as_default": settings.paymentMethodSetAsDefault.rawValue,
+            "payment_method_options_setup_future_usage": settings.paymentMethodOptionsSetupFutureUsage.toDictionary(),
             //            "set_shipping_address": true // Uncomment to make server vend PI with shipping address populated
         ] as [String: Any]
         if settingsToLoad.apmsEnabled == .off, let supportedPaymentMethods = settingsToLoad.supportedPaymentMethods, !supportedPaymentMethods.isEmpty {
@@ -708,9 +771,6 @@ extension PlaygroundController {
         }
         if settings.paymentMethodSave == .disabled && settings.allowRedisplayOverride != .notSet {
             body["customer_session_payment_method_save_allow_redisplay_override"] = settings.allowRedisplayOverride.rawValue
-        }
-        if settingsToLoad.paymentMethodOptionsSetupFutureUsageEnabled == .on {
-            body["payment_method_options_setup_future_usage"] = settings.paymentMethodOptionsSetupFutureUsage.toDictionary()
         }
         makeRequest(with: checkoutEndpoint, body: body) { data, response, error in
             // If the completed load state doesn't represent the current state, discard this result
@@ -911,8 +971,7 @@ extension PlaygroundController {
                 let data = data,
                 let json = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any]
             else {
-                if let data = data,
-                   (response as? HTTPURLResponse)?.statusCode == 400 {
+                if let data, (response as? HTTPURLResponse)?.statusCode == 400 {
                     let errorMessage = String(decoding: data, as: UTF8.self)
                     // read the error message
                     intentCreationCallback(.failure(ConfirmHandlerError.confirmError(errorMessage)))

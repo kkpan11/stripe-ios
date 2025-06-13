@@ -156,13 +156,6 @@ struct PaymentSheetTestPlaygroundSettings: Codable, Equatable {
         case off
     }
 
-    enum PaymentMethodOptionsSetupFutureUsageEnabled: String, PickerEnum {
-        static var enumName: String { "PMO SFU" }
-
-        case on
-        case off
-    }
-
     struct PaymentMethodOptionsSetupFutureUsage: Codable, Equatable {
         // Supports all SFU values
         var card: SetupFutureUsageAll
@@ -281,6 +274,7 @@ struct PaymentSheetTestPlaygroundSettings: Codable, Equatable {
         case on
         case off
         case onWithDetails = "on w/details"
+        case onWithShipping = "on w/Shipping"
     }
 
     enum ApplePayButtonType: String, PickerEnum {
@@ -586,11 +580,23 @@ struct PaymentSheetTestPlaygroundSettings: Codable, Equatable {
         case `continue`
     }
 
+    enum RowSelectionBehavior: String, PickerEnum {
+        static let enumName: String = "rowSelectionBehavior"
+        case `default`
+        case immediateAction
+    }
+
     enum CardBrandAcceptance: String, PickerEnum {
         static let enumName: String = "cardBrandAcceptance"
         case all
         case blockAmEx
         case allowVisa
+    }
+
+    enum LinkFlowControllerChanges: String, PickerEnum {
+        static let enumName: String = "Link FlowController RUX"
+        case on
+        case off
     }
 
     enum ConfigurationStyle: String, PickerEnum {
@@ -612,7 +618,6 @@ struct PaymentSheetTestPlaygroundSettings: Codable, Equatable {
     var merchantCountryCode: MerchantCountry
     var apmsEnabled: APMSEnabled
     var supportedPaymentMethods: String?
-    var paymentMethodOptionsSetupFutureUsageEnabled: PaymentMethodOptionsSetupFutureUsageEnabled
     var paymentMethodOptionsSetupFutureUsage: PaymentMethodOptionsSetupFutureUsage
 
     var shippingInfo: ShippingInfo
@@ -652,7 +657,9 @@ struct PaymentSheetTestPlaygroundSettings: Codable, Equatable {
     var collectAddress: BillingDetailsAddress
     var formSheetAction: FormSheetAction
     var embeddedViewDisplaysMandateText: DisplaysMandateTextEnabled
+    var rowSelectionBehavior: RowSelectionBehavior
     var cardBrandAcceptance: CardBrandAcceptance
+    var linkFlowControllerChanges: LinkFlowControllerChanges
 
     static func defaultValues() -> PaymentSheetTestPlaygroundSettings {
         return PaymentSheetTestPlaygroundSettings(
@@ -667,7 +674,6 @@ struct PaymentSheetTestPlaygroundSettings: Codable, Equatable {
             amount: ._5099,
             merchantCountryCode: .US,
             apmsEnabled: .on,
-            paymentMethodOptionsSetupFutureUsageEnabled: .off,
             paymentMethodOptionsSetupFutureUsage: PaymentMethodOptionsSetupFutureUsage.defaultValues(),
             shippingInfo: .off,
             applePayEnabled: .on,
@@ -705,7 +711,10 @@ struct PaymentSheetTestPlaygroundSettings: Codable, Equatable {
             collectAddress: .automatic,
             formSheetAction: .continue,
             embeddedViewDisplaysMandateText: .on,
-            cardBrandAcceptance: .all)
+            rowSelectionBehavior: .default,
+            cardBrandAcceptance: .all,
+            linkFlowControllerChanges: .off
+        )
     }
 
     static let nsUserDefaultsKey = "PaymentSheetTestPlaygroundSettings"

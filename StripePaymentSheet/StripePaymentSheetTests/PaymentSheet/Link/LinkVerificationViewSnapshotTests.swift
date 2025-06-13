@@ -13,6 +13,7 @@ import UIKit
 @testable@_spi(STP) import StripePayments
 @testable@_spi(STP) import StripePaymentSheet
 @testable@_spi(STP) import StripePaymentsUI
+@testable@_spi(STP) import StripeUICore
 
 class LinkVerificationViewSnapshotTests: STPSnapshotTestCase {
 
@@ -37,6 +38,12 @@ class LinkVerificationViewSnapshotTests: STPSnapshotTestCase {
         verify(sut)
     }
 
+    func testEmbeddedWithInput() {
+        let sut = makeSUT(mode: .embedded)
+        sut.codeField.value = "1234"
+        verify(sut)
+    }
+
     func verify(
         _ view: LinkVerificationView,
         identifier: String? = nil,
@@ -55,7 +62,6 @@ extension LinkVerificationViewSnapshotTests {
         let email: String
         let redactedPhoneNumber: String?
         let isRegistered: Bool
-        let isLoggedIn: Bool
     }
 
     func makeSUT(mode: LinkVerificationView.Mode) -> LinkVerificationView {
@@ -63,13 +69,12 @@ extension LinkVerificationViewSnapshotTests {
             mode: mode,
             linkAccount: LinkAccountStub(
                 email: "user@example.com",
-                redactedPhoneNumber: "+1********55",
-                isRegistered: true,
-                isLoggedIn: false
+                redactedPhoneNumber: "(•••) ••• ••55",
+                isRegistered: true
             )
         )
 
-        sut.tintColor = .linkBrand
+        sut.tintColor = .linkIconBrand
 
         return sut
     }

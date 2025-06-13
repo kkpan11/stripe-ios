@@ -34,7 +34,7 @@ extension PayWithLinkViewController {
         private lazy var titleLabel: UILabel = {
             let label = UILabel()
             label.font = LinkUI.font(forTextStyle: .title)
-            label.textColor = .linkPrimaryText
+            label.textColor = .linkTextPrimary
             label.adjustsFontForContentSizeCategory = true
             label.numberOfLines = 0
             label.textAlignment = .center
@@ -49,7 +49,7 @@ extension PayWithLinkViewController {
         private lazy var thisIsYourDefaultLabel: UILabel = {
             let label = UILabel()
             label.font = LinkUI.font(forTextStyle: .bodyEmphasized)
-            label.textColor = .linkSecondaryText
+            label.textColor = .linkTextSecondary
             label.adjustsFontForContentSizeCategory = true
             label.numberOfLines = 0
             label.textAlignment = .center
@@ -65,13 +65,6 @@ extension PayWithLinkViewController {
         ) { [weak self] in
             self?.updateCard()
         }
-
-        private lazy var cancelButton: Button = {
-            let button = Button(configuration: .linkSecondary(), title: String.Localized.cancel)
-            button.addTarget(self, action: #selector(didSelectCancel), for: .touchUpInside)
-            button.adjustsFontForContentSizeCategory = true
-            return button
-        }()
 
         private lazy var errorLabel: UILabel = {
             return ElementsUI.makeErrorLabel(theme: LinkUI.appearance.asElementsTheme)
@@ -115,7 +108,7 @@ extension PayWithLinkViewController {
         override func viewDidLoad() {
             super.viewDidLoad()
             self.cardEditElement.delegate = self
-            view.backgroundColor = .linkBackground
+            view.backgroundColor = .linkSurfacePrimary
             view.directionalLayoutMargins = LinkUI.contentMargins
             errorLabel.isHidden = true
 
@@ -125,7 +118,6 @@ extension PayWithLinkViewController {
                 errorLabel,
                 thisIsYourDefaultLabel,
                 updateButton,
-                cancelButton,
             ])
 
             stackView.axis = .vertical
@@ -133,13 +125,15 @@ extension PayWithLinkViewController {
             stackView.setCustomSpacing(LinkUI.extraLargeContentSpacing, after: titleLabel)
             stackView.isLayoutMarginsRelativeArrangement = true
             stackView.directionalLayoutMargins = LinkUI.contentMargins
+            stackView.translatesAutoresizingMaskIntoConstraints = false
+            contentView.addSubview(stackView)
 
-            let scrollView = LinkKeyboardAvoidingScrollView(contentView: stackView)
-            #if !os(visionOS)
-            scrollView.keyboardDismissMode = .interactive
-            #endif
-
-            contentView.addAndPinSubview(scrollView)
+            NSLayoutConstraint.activate([
+                contentView.topAnchor.constraint(equalTo: stackView.topAnchor),
+                contentView.leadingAnchor.constraint(equalTo: stackView.leadingAnchor),
+                contentView.trailingAnchor.constraint(equalTo: stackView.trailingAnchor),
+                contentView.bottomAnchor.constraint(greaterThanOrEqualTo: stackView.bottomAnchor),
+            ])
 
             if !paymentMethod.isDefault || isBillingDetailsUpdateFlow {
                 thisIsYourDefaultLabel.isHidden = true
@@ -174,6 +168,8 @@ extension PayWithLinkViewController {
                 )
             )
 
+            coordinator?.allowSheetDismissal(false)
+
             linkAccount.updatePaymentDetails(id: paymentMethod.stripeID, updateParams: updateParams) { [weak self] result in
                 guard let self else {
                     return
@@ -193,22 +189,20 @@ extension PayWithLinkViewController {
                     }
 
                     self.updateButton.update(state: .succeeded, style: nil, callToAction: nil, animated: true) {
+                        self.coordinator?.allowSheetDismissal(true)
                         self.delegate?.didUpdate(
                             paymentMethod: updatedPaymentDetails,
                             confirmationExtras: confirmationExtras
                         )
-                        self.navigationController?.popViewController(animated: true)
+                        _ = self.bottomSheetController?.popContentViewController()
                     }
                 case .failure(let error):
                     self.updateErrorLabel(for: error)
                     self.cardEditElement.view.isUserInteractionEnabled = true
                     self.updateButton.update(state: .enabled)
+                    coordinator?.allowSheetDismissal(true)
                 }
             }
-        }
-
-        @objc func didSelectCancel() {
-            self.navigationController?.popViewController(animated: true)
         }
 
         func updateErrorLabel(for error: Error?) {

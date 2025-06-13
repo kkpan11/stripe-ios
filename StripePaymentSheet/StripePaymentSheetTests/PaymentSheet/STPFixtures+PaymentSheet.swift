@@ -9,7 +9,7 @@ import Foundation
 @_spi(STP) @testable import StripeCore
 @_spi(STP) import StripeCoreTestUtils
 @_spi(STP) import StripePayments
-@_spi(STP) @_spi(PaymentMethodOptionsSetupFutureUsagePreview) @testable import StripePaymentSheet
+@_spi(STP) @_spi(PaymentMethodOptionsSetupFutureUsagePreview) @_spi(AppearanceAPIAdditionsPreview) @testable import StripePaymentSheet
 import StripePaymentsTestUtils
 @_spi(STP) import StripeUICore
 
@@ -62,6 +62,7 @@ extension STPElementsSession {
             allResponseFields: [:],
             sessionID: "test_123",
             orderedPaymentMethodTypes: orderedPaymentMethodTypes,
+            orderedPaymentMethodTypesAndWallets: [],
             unactivatedPaymentMethodTypes: unactivatedPaymentMethodTypes,
             countryCode: countryCode,
             merchantCountryCode: merchantCountryCode,
@@ -183,6 +184,7 @@ extension STPElementsSession {
 
     static func _testValue(
         intent: Intent,
+        isLinkPassthroughModeEnabled: Bool? = nil,
         linkMode: LinkMode? = nil,
         linkFundingSources: Set<LinkSettings.FundingSource> = [],
         defaultPaymentMethod: String? = nil,
@@ -217,6 +219,7 @@ extension STPElementsSession {
         return STPElementsSession._testValue(
             paymentMethodTypes: paymentMethodTypes,
             customerSessionData: customerSessionData,
+            isLinkPassthroughModeEnabled: isLinkPassthroughModeEnabled,
             linkMode: linkMode,
             linkFundingSources: linkFundingSources,
             defaultPaymentMethod: defaultPaymentMethod,
@@ -383,6 +386,31 @@ extension STPPaymentMethod {
             ] as [String: Any],
         ])!
     }
+
+    static func _testLink() -> STPPaymentMethod {
+        let paymentMethod = STPPaymentMethod.decodedObject(fromAPIResponse: [
+            "id": "pm_123",
+            "type": "link",
+            "sepa_debit": [
+                "last4": "1234",
+            ],
+            "billing_details": [
+                "name": "Sam Stripe",
+                "email": "sam@stripe.com",
+            ] as [String: Any],
+        ])!
+        paymentMethod.linkPaymentDetails = .card(
+            LinkPaymentDetails.Card(
+                id: "csmr_123",
+                displayName: nil,
+                expMonth: 12,
+                expYear: 2030,
+                last4: "4242",
+                brand: .visa
+            )
+        )
+        return paymentMethod
+    }
 }
 
 extension PaymentSheet.Appearance {
@@ -396,12 +424,14 @@ extension PaymentSheet.Appearance {
 
         appearance.cornerRadius = 0.0
         appearance.borderWidth = 2.0
+        appearance.sheetCornerRadius = 16.0
         appearance.shadow = PaymentSheet.Appearance.Shadow(
             color: .orange,
             opacity: 0.5,
             offset: CGSize(width: 0, height: 2),
             radius: 4
         )
+        appearance.formInsets = NSDirectionalEdgeInsets(top: 30, leading: 50, bottom: 70, trailing: 10)
 
         // Customize the colors
         var colors = PaymentSheet.Appearance.Colors()
@@ -417,8 +447,14 @@ extension PaymentSheet.Appearance {
         colors.icon = .green
         colors.danger = .purple
 
+        // Customize the primary button
+        var primaryButton = PaymentSheet.Appearance.PrimaryButton()
+        primaryButton.height = 50
+        primaryButton.cornerRadius = 8
+
         appearance.font = font
         appearance.colors = colors
+        appearance.primaryButton = primaryButton
 
         return appearance
     }

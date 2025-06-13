@@ -25,8 +25,10 @@ enum Image: String, CaseIterable, ImageMaker {
     case pm_type_afterpay = "icon-pm-afterpay"
     case pm_type_aubecsdebit = "icon-pm-aubecsdebit"
     case pm_type_us_bank = "icon-pm-bank"
+    case pm_type_us_bank_outlined = "icon-pm-bank-outlined"
     case pm_type_bancontact = "icon-pm-bancontact"
     case pm_type_card = "icon-pm-card"
+    case pm_type_card_outlined = "icon-pm-card-outlined"
     case pm_type_eps = "icon-pm-eps"
     case pm_type_giropay = "icon-pm-giropay"
     case pm_type_ideal = "icon-pm-ideal"
@@ -43,6 +45,8 @@ enum Image: String, CaseIterable, ImageMaker {
     case pm_type_konbini = "icon-pm-konbini"
     case pm_type_boleto = "icon-pm-boleto"
     case pm_type_swish = "icon-pm-swish"
+    case pm_type_crypto = "icon-pm-cryto"
+    case pm_type_crypto_outlined = "icon-pm-cryto-outlined"
 
     // Icons/symbols
     case icon_checkmark = "icon_checkmark"
@@ -56,17 +60,20 @@ enum Image: String, CaseIterable, ImageMaker {
     case icon_x_standalone = "icon_x_standalone"
     case icon_chevron_left_standalone = "icon_chevron_left_standalone"
     case icon_edit = "icon_edit"
+    case icon_edit_outlined = "icon_edit_outlined"
 
     // Link
     case back_button = "back_button"
     case icon_cancel = "icon_cancel"
-    case icon_add_bordered = "icon_add_bordered"
     case icon_link_success = "icon_link_success"
     case icon_link_error = "icon_link_error"
     case link_logo = "link_logo"
     case link_logo_bw = "link_logo_bw"
     case link_logo_knockout = "link_logo_knockout"
     case link_icon = "link_icon"
+
+    // ShopPay
+    case shoppay_logo_bw = "shoppay_logo_bw"
 
     // Carousel
     case carousel_applepay
@@ -89,7 +96,7 @@ enum Image: String, CaseIterable, ImageMaker {
 
     // Mandates
     case bacsdd_logo = "bacsdd_logo"
-    
+
     // Embedded payment element
     case embedded_check = "icon_check"
 }

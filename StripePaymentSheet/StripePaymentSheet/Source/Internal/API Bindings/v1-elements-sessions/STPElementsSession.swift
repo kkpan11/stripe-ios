@@ -20,6 +20,9 @@ import Foundation
     /// The ordered payment method preference for this ElementsSession.
     let orderedPaymentMethodTypes: [STPPaymentMethodType]
 
+    /// The ordered payment method and wallet types for this ElementsSession.
+    let orderedPaymentMethodTypesAndWallets: [String]
+
     /// A list of payment method types that are not activated in live mode, but activated in test mode.
     let unactivatedPaymentMethodTypes: [STPPaymentMethodType]
 
@@ -63,6 +66,7 @@ import Foundation
         allResponseFields: [AnyHashable: Any],
         sessionID: String,
         orderedPaymentMethodTypes: [STPPaymentMethodType],
+        orderedPaymentMethodTypesAndWallets: [String],
         unactivatedPaymentMethodTypes: [STPPaymentMethodType],
         countryCode: String?,
         merchantCountryCode: String?,
@@ -80,6 +84,7 @@ import Foundation
         self.allResponseFields = allResponseFields
         self.sessionID = sessionID
         self.orderedPaymentMethodTypes = orderedPaymentMethodTypes
+        self.orderedPaymentMethodTypesAndWallets = orderedPaymentMethodTypesAndWallets
         self.unactivatedPaymentMethodTypes = unactivatedPaymentMethodTypes
         self.countryCode = countryCode
         self.merchantCountryCode = merchantCountryCode
@@ -122,6 +127,7 @@ import Foundation
             allResponseFields: allResponseFields,
             sessionID: UUID().uuidString,
             orderedPaymentMethodTypes: sortedPaymentMethodTypes,
+            orderedPaymentMethodTypesAndWallets: [],
             unactivatedPaymentMethodTypes: [],
             countryCode: nil,
             merchantCountryCode: nil,
@@ -153,16 +159,19 @@ extension STPElementsSession: STPAPIResponseDecodable {
 
         // Optional fields:
         let unactivatedPaymentMethodTypeStrings = response["unactivated_payment_method_types"] as? [String] ?? []
+        let orderedPaymentMethodTypesAndWallets = response["ordered_payment_method_types_and_wallets"] as? [String] ?? []
         let cardBrandChoice = STPCardBrandChoice.decodedObject(fromAPIResponse: response["card_brand_choice"] as? [AnyHashable: Any])
         let applePayPreference = response["apple_pay_preference"] as? String
         let isApplePayEnabled = applePayPreference != "disabled"
+        let flags = response["flags"] as? [String: Bool] ?? [:]
         let customer: ElementsCustomer? = {
             let customerDataKey = "customer"
             guard response[customerDataKey] != nil, !(response[customerDataKey] is NSNull) else {
                 return nil
             }
+            let enableLinkInSPM = flags["elements_enable_link_spm"] ?? false
             guard let customerJSON = response[customerDataKey] as? [AnyHashable: Any],
-                  let decoded = ElementsCustomer.decoded(fromAPIResponse: customerJSON) else {
+                  let decoded = ElementsCustomer.decoded(fromAPIResponse: customerJSON, enableLinkInSPM: enableLinkInSPM) else {
                 STPAnalyticsClient.sharedClient.logPaymentSheetEvent(event: .paymentSheetElementsSessionCustomerDeserializeFailed)
                 return nil
             }
@@ -207,6 +216,7 @@ extension STPElementsSession: STPAPIResponseDecodable {
             allResponseFields: response,
             sessionID: sessionID,
             orderedPaymentMethodTypes: paymentMethodTypeStrings.map({ STPPaymentMethod.type(from: $0) }),
+            orderedPaymentMethodTypesAndWallets: orderedPaymentMethodTypesAndWallets,
             unactivatedPaymentMethodTypes: unactivatedPaymentMethodTypeStrings.map({ STPPaymentMethod.type(from: $0) }),
             countryCode: paymentMethodPrefDict["country_code"] as? String,
             merchantCountryCode: response["merchant_country"] as? String,
@@ -216,7 +226,7 @@ extension STPElementsSession: STPAPIResponseDecodable {
             experimentsData: ExperimentsData.decodedObject(
                 fromAPIResponse: response["experiments_data"] as? [AnyHashable: Any]
             ),
-            flags: response["flags"] as? [String: Bool] ?? [:],
+            flags: flags,
             paymentMethodSpecs: response["payment_method_specs"] as? [[AnyHashable: Any]],
             cardBrandChoice: cardBrandChoice,
             isApplePayEnabled: isApplePayEnabled,
@@ -231,6 +241,10 @@ extension STPElementsSession: STPAPIResponseDecodable {
 extension STPElementsSession {
     var isCardBrandChoiceEligible: Bool {
         return cardBrandChoice?.eligible ?? false
+    }
+
+    var enableLinkInSPM: Bool {
+        flags["elements_enable_link_spm"] ?? false
     }
 
     func allowsRemovalOfPaymentMethodsForPaymentSheet() -> Bool {
@@ -294,6 +308,10 @@ extension STPElementsSession {
 
     var incentive: PaymentMethodIncentive? {
         linkSettings?.linkConsumerIncentive.flatMap(PaymentMethodIncentive.init)
+    }
+
+    var allowsLinkDefaultOptIn: Bool {
+        linkFlags["link_mobile_disable_default_opt_in"] != true
     }
 }
 

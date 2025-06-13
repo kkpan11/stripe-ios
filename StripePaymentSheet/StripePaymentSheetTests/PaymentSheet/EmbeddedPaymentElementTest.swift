@@ -196,7 +196,7 @@ class EmbeddedPaymentElementTest: XCTestCase {
         // ...should cancel the 1st update
         XCTAssertEqual(updateResult, .canceled)
         XCTAssertEqual(updateResult2, .succeeded)
-        XCTAssertTrue(sut.intent.isSettingUp)
+        XCTAssertFalse(sut.intent.isPaymentIntent)
     }
 
     func testConfirmHandlesInflightUpdateThatSucceeds() async throws {
@@ -742,6 +742,41 @@ class EmbeddedPaymentElementTest: XCTestCase {
         }
     }
 
+    func testCreateFails_whenFlatWithChevronWithDefaultRowSelectionBehavior() async throws {
+        // Given an appearance with row.style = .flatWithChevron and a config with rowSelectionBehavior = .default
+        var config = configuration
+        config.appearance.embeddedPaymentElement.row.style = .flatWithChevron
+
+        // When we create an EmbeddedPaymentElement
+        do {
+            _ = try await EmbeddedPaymentElement.create(
+                intentConfiguration: paymentIntentConfig,
+                configuration: config
+            )
+            XCTFail("Expected error to be thrown but received none.")
+        } catch {
+            // Then we expected a PaymentSheetError indicating the unsupported configuration
+            guard let paymentSheetError = error as? PaymentSheetError else {
+                XCTFail("Unexpected error type: \(error)")
+                return
+            }
+            XCTAssertTrue(paymentSheetError.debugDescription.contains("flatWithChevron row style without .immediateAction row selection behavior is not supported"))
+        }
+    }
+
+    func testCreateSucceds_whenFlatWithChevronWithImmediateActionRowSelectionBehavior() async throws {
+        // Given an appearance with row.style = .flatWithChevron and a config with rowSelectionBehavior = .immediateAction
+        var config = configuration
+        config.appearance.embeddedPaymentElement.row.style = .flatWithChevron
+        config.rowSelectionBehavior = .immediateAction(didSelectPaymentOption: {})
+
+        // When we create an EmbeddedPaymentElement
+        _ = try await EmbeddedPaymentElement.create(
+            intentConfiguration: paymentIntentConfig,
+            configuration: config
+        )
+    }
+
     func testCancelingFormResetsPaymentOption() async throws {
         // Create our EmbeddedPaymentElement
         let sut = try await EmbeddedPaymentElement.create(
@@ -921,6 +956,31 @@ class EmbeddedPaymentElementTest: XCTestCase {
         XCTAssertTrue(confirmResult.isCanceledOrFailed)
         XCTAssertNil(sut.paymentOption,
             "Payment option should have been cleared after a canceled/failed confirmation.")
+    }
+
+    func testPaymentOptionDelegateFiresBeforeImmediateAction() async throws {
+        let immediateActionExpectation = expectation(description: "immediateAction fired")
+        var config = configuration
+        config.rowSelectionBehavior = .immediateAction(didSelectPaymentOption: {
+            // This closure must execute *after* the delegate sets `didCallDelegate`
+            XCTAssertTrue(self.delegateDidUpdatePaymentOptionCalled,
+                          "embeddedPaymentElementDidUpdatePaymentOption should be invoked before immediateAction")
+            immediateActionExpectation.fulfill()
+        })
+
+        let sut = try await EmbeddedPaymentElement.create(
+            intentConfiguration: paymentIntentConfig,
+            configuration: config
+        )
+        sut.delegate = self
+
+        // Tap a row that has no form
+        sut.embeddedPaymentMethodsView.didTap(
+            rowButton: sut.embeddedPaymentMethodsView
+                .getRowButton(accessibilityIdentifier: "Cash App Pay")
+        )
+
+        await fulfillment(of: [immediateActionExpectation])
     }
 
 }

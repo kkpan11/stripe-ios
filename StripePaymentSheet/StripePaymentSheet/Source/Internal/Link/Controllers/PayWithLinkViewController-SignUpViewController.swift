@@ -20,11 +20,13 @@ extension PayWithLinkViewController {
     final class SignUpViewController: BaseViewController {
 
         private let viewModel: SignUpViewModel
+        private let selectionBehavior = SelectionBehavior.highlightBorder(configuration: LinkUI.highlightBorderConfiguration)
+        private let theme = LinkUI.appearance.asElementsTheme
 
         private let titleLabel: UILabel = {
             let label = UILabel()
             label.font = LinkUI.font(forTextStyle: .title)
-            label.textColor = .linkPrimaryText
+            label.textColor = .linkTextPrimary
             label.adjustsFontForContentSizeCategory = true
             label.numberOfLines = 0
             label.textAlignment = .center
@@ -38,7 +40,7 @@ extension PayWithLinkViewController {
         private lazy var subtitleLabel: UILabel = {
             let label = UILabel()
             label.font = LinkUI.font(forTextStyle: .body)
-            label.textColor = .linkSecondaryText
+            label.textColor = .linkTextSecondary
             label.adjustsFontForContentSizeCategory = true
             label.numberOfLines = 0
             label.textAlignment = .center
@@ -46,12 +48,16 @@ extension PayWithLinkViewController {
             return label
         }()
 
-        private lazy var emailElement = LinkEmailElement(defaultValue: viewModel.emailAddress, showLogo: false, theme: LinkUI.appearance.asElementsTheme)
+        private lazy var emailElement = {
+            let element = LinkEmailElement(defaultValue: viewModel.emailAddress, showLogo: false, theme: theme)
+            element.indicatorTintColor = .linkIconBrand
+            return element
+        }()
 
         private lazy var phoneNumberElement = PhoneNumberElement(
             defaultCountryCode: context.configuration.defaultBillingDetails.address.country,
             defaultPhoneNumber: context.configuration.defaultBillingDetails.phone,
-            theme: LinkUI.appearance.asElementsTheme
+            theme: theme
         )
 
         private lazy var nameElement = TextFieldElement(
@@ -59,24 +65,36 @@ extension PayWithLinkViewController {
                 type: .full,
                 defaultValue: viewModel.legalName
             ),
-            theme: LinkUI.appearance.asElementsTheme
+            theme: theme
         )
 
-        private lazy var emailSection = SectionElement(elements: [emailElement], theme: LinkUI.appearance.asElementsTheme)
+        private lazy var emailSection = SectionElement(
+            elements: [emailElement],
+            selectionBehavior: selectionBehavior,
+            theme: theme
+        )
 
-        private lazy var phoneNumberSection = SectionElement(elements: [phoneNumberElement], theme: LinkUI.appearance.asElementsTheme)
+        private lazy var phoneNumberSection = SectionElement(
+            elements: [phoneNumberElement],
+            selectionBehavior: selectionBehavior,
+            theme: theme
+        )
 
-        private lazy var nameSection = SectionElement(elements: [nameElement], theme: LinkUI.appearance.asElementsTheme)
+        private lazy var nameSection = SectionElement(
+            elements: [nameElement],
+            selectionBehavior: selectionBehavior,
+            theme: theme
+        )
 
         private lazy var legalTermsView: LinkLegalTermsView = {
             let legalTermsView = LinkLegalTermsView(textAlignment: .center, isStandalone: true)
-            legalTermsView.tintColor = .linkBrandDark
+            legalTermsView.tintColor = .linkTextBrand
             legalTermsView.delegate = self
             return legalTermsView
         }()
 
         private lazy var errorLabel: UILabel = {
-            let label = ElementsUI.makeErrorLabel(theme: LinkUI.appearance.asElementsTheme)
+            let label = ElementsUI.makeErrorLabel(theme: theme)
             label.isHidden = true
             return label
         }()
@@ -84,10 +102,7 @@ extension PayWithLinkViewController {
         private lazy var signUpButton: Button = {
             let button = Button(
                 configuration: .linkPrimary(),
-                title: STPLocalizedString(
-                    "Agree and continue",
-                    "Title for a button that when tapped creates a Link account for the user."
-                )
+                title: viewModel.signUpButtonTitle
             )
             button.addTarget(self, action: #selector(didTapSignUpButton(_:)), for: .touchUpInside)
             button.adjustsFontForContentSizeCategory = true
@@ -95,7 +110,7 @@ extension PayWithLinkViewController {
             return button
         }()
 
-        private lazy var stackView: UIStackView = {
+        private(set) lazy var stackView: UIStackView = {
             let stackView = UIStackView(arrangedSubviews: [
                 titleLabel,
                 subtitleLabel,
@@ -114,7 +129,7 @@ extension PayWithLinkViewController {
             stackView.setCustomSpacing(LinkUI.extraLargeContentSpacing, after: legalTermsView)
             stackView.isLayoutMarginsRelativeArrangement = true
             stackView.directionalLayoutMargins = LinkUI.contentMargins
-
+            stackView.translatesAutoresizingMaskIntoConstraints = false
             return stackView
         }()
 
@@ -137,17 +152,22 @@ extension PayWithLinkViewController {
 
         override func viewDidLoad() {
             super.viewDidLoad()
+            view.tintColor = .linkTextPrimary
 
-            let scrollView = LinkKeyboardAvoidingScrollView(contentView: stackView)
-            #if !os(visionOS)
-            scrollView.keyboardDismissMode = .interactive
-            #endif
+            contentView.addSubview(stackView)
 
-            contentView.addAndPinSubview(scrollView)
-
+            NSLayoutConstraint.activate([
+                contentView.topAnchor.constraint(equalTo: stackView.topAnchor, constant: -LinkUI.extraLargeContentSpacing),
+                contentView.leadingAnchor.constraint(equalTo: stackView.leadingAnchor),
+                contentView.trailingAnchor.constraint(equalTo: stackView.trailingAnchor),
+                contentView.bottomAnchor.constraint(greaterThanOrEqualTo: stackView.bottomAnchor),
+                contentView.heightAnchor.constraint(greaterThanOrEqualToConstant: 300),
+            ])
             setupBindings()
             updateUI()
         }
+
+        override var requiresFullScreen: Bool { true }
 
         override func viewDidAppear(_ animated: Bool) {
             super.viewDidAppear(animated)
@@ -171,7 +191,7 @@ extension PayWithLinkViewController {
             nameElement.delegate = self
         }
 
-        private func updateUI(animated: Bool = false) {
+        func updateUI(animated: Bool = false) {
             if viewModel.isLookingUpLinkAccount {
                 emailElement.startAnimating()
             } else {
@@ -208,18 +228,15 @@ extension PayWithLinkViewController {
             )
 
             // Signup button
-            stackView.toggleArrangedSubview(
-                signUpButton,
-                shouldShow: viewModel.shouldShowSignUpButton,
-                animated: animated
-            )
-
+            signUpButton.title = viewModel.signUpButtonTitle
             signUpButton.isEnabled = viewModel.shouldEnableSignUpButton
         }
 
         @objc
         func didTapSignUpButton(_ sender: Button) {
             signUpButton.isLoading = true
+
+            coordinator?.allowSheetDismissal(false)
 
             viewModel.signUp { [weak self] result in
                 guard let self else {
@@ -239,6 +256,7 @@ extension PayWithLinkViewController {
                 }
 
                 self.signUpButton.isLoading = false
+                coordinator?.allowSheetDismissal(true)
             }
         }
 
@@ -273,6 +291,15 @@ extension PayWithLinkViewController.SignUpViewController: PayWithLinkSignUpViewM
 extension PayWithLinkViewController.SignUpViewController: ElementDelegate {
 
     func didUpdate(element: Element) {
+        // Forward delegate updates to the respective SectionElement
+        if element === emailElement {
+            emailSection.didUpdate(element: emailElement.emailAddressElement)
+        } else if element === phoneNumberElement {
+            phoneNumberSection.didUpdate(element: phoneNumberElement.lastUpdatedElement ?? element)
+        } else if element === nameElement {
+            nameSection.didUpdate(element: nameElement)
+        }
+
         switch emailElement.validationState {
         case .valid:
             viewModel.emailAddress = emailElement.emailAddressString

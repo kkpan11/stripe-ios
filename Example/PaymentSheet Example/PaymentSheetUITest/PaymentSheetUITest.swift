@@ -243,7 +243,8 @@ class PaymentSheetStandardUITests: PaymentSheetUITestCase {
         app.buttons["Apple Pay, apple_pay"].waitForExistenceAndTap(timeout: 30) // Should default to Apple Pay
         XCTAssertEqual(
             analyticsLog.map({ $0[string: "event"] }),
-            ["mc_load_started", "link.account_lookup.complete", "mc_load_succeeded", "mc_custom_init_customer_applepay", "mc_custom_sheet_savedpm_show"]
+            // fraud detection telemetry should not be sent in tests, so it should report an API failure
+            ["mc_load_started", "link.account_lookup.complete", "mc_load_succeeded", "fraud_detection_data_repository.api_failure", "mc_custom_init_customer_applepay", "mc_custom_sheet_savedpm_show"]
         )
         // `mc_load_succeeded` event `selected_lpm` should be "apple_pay", the default payment method.
         XCTAssertEqual(analyticsLog[2][string: "selected_lpm"], "apple_pay")
@@ -618,7 +619,8 @@ class PaymentSheetDeferredUITests: PaymentSheetUITestCase {
         XCTAssertEqual(
             // Ignore luxe_* analytics since there are a lot and I'm not sure if they're the same every time
             analyticsLog.map({ $0[string: "event"] }).filter({ $0 != "luxe_image_selector_icon_from_bundle" && $0 != "luxe_image_selector_icon_downloaded" }),
-            ["mc_complete_init_applepay", "mc_load_started", "mc_load_succeeded", "mc_complete_sheet_newpm_show", "mc_lpms_render", "mc_form_shown"]
+            // fraud detection telemetry should not be sent in tests, so it should report an API failure
+            ["mc_complete_init_applepay", "mc_load_started", "mc_load_succeeded", "fraud_detection_data_repository.api_failure", "mc_complete_sheet_newpm_show", "mc_lpms_render", "mc_form_shown"]
         )
         XCTAssertEqual(analyticsLog.last?[string: "selected_lpm"], "card")
 
@@ -3318,14 +3320,26 @@ extension PaymentSheetUITestCase {
         let paymentMandateText = "By continuing, you agree to authorize payments pursuant to these terms."
         let setupMandateText = "By saving your bank account for Example, Inc. you agree to authorize payments pursuant to these terms."
 
-        // Save the payment method
-        XCTAssertTrue(app.textViews[paymentMandateText].waitForExistence(timeout: 5))
-        let saveThisAccountToggle = app.switches["Save this account for future Example, Inc. payments"]
-        XCTAssertFalse(saveThisAccountToggle.isSelected)
-        saveThisAccountToggle.tap()
+        switch mode {
+        case .payment:
+            // Save the payment method
+            XCTAssertTrue(app.textViews[paymentMandateText].waitForExistence(timeout: 5))
+            let saveThisAccountToggle = app.switches["Save this account for future Example, Inc. payments"]
+            XCTAssertFalse(saveThisAccountToggle.isSelected)
+            saveThisAccountToggle.tap()
 
-        // Tapping the checkbox changes the mandate
-        XCTAssertTrue(app.textViews[setupMandateText].waitForExistence(timeout: 5))
+            // Tapping the checkbox changes the mandate
+            XCTAssertTrue(app.textViews[setupMandateText].waitForExistence(timeout: 5))
+        default:
+            // Since the payment method is being set up, it always shows the setup mandate
+            XCTAssertTrue(app.textViews[setupMandateText].waitForExistence(timeout: 5))
+            let saveThisAccountToggle = app.switches["Save this account for future Example, Inc. payments"]
+            XCTAssertFalse(saveThisAccountToggle.isSelected)
+            saveThisAccountToggle.tap()
+
+            // Tapping the checkbox doesn't change the mandate
+            XCTAssertTrue(app.textViews[setupMandateText].waitForExistence(timeout: 5))
+        }
 
         // Confirm
         let confirmButtonText = mode == .payment ? "Pay $50.99" : "Set up"

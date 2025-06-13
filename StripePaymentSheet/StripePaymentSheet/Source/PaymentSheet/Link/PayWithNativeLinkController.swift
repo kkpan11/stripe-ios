@@ -16,49 +16,167 @@ import UIKit
 @available(macCatalystApplicationExtension, unavailable)
 final class PayWithNativeLinkController {
 
-    typealias CompletionBlock = PaymentSheetResultCompletionBlock
+    enum Mode {
+        case full
+        case paymentMethodSelection
+    }
+
+    enum CompletionResult {
+        case full(
+            result: PaymentSheetResult,
+            deferredIntentConfirmationType: STPAnalyticsClient.DeferredIntentConfirmationType?,
+            didFinish: Bool
+        )
+        case paymentMethodSelection(
+            confirmOption: PaymentSheet.LinkConfirmOption?,
+            shouldReturnToPaymentSheet: Bool = false
+        )
+
+        var shouldShowPaymentSheetAgain: Bool {
+            switch self {
+            case .full(let result, _, _):
+                return result.isCanceledOrFailed
+            case .paymentMethodSelection(let confirmOption, _):
+                return confirmOption == nil
+            }
+        }
+    }
 
     private let paymentHandler: STPPaymentHandler
 
-    private var completion: PaymentSheetResultCompletionBlock?
+    private var completion: ((CompletionResult) -> Void)?
 
     private var selfRetainer: PayWithNativeLinkController?
 
+    let mode: Mode
     let intent: Intent
     let elementsSession: STPElementsSession
     let configuration: PaymentElementConfiguration
+    let logPayment: Bool
     let analyticsHelper: PaymentSheetAnalyticsHelper
 
-    init(intent: Intent, elementsSession: STPElementsSession, configuration: PaymentElementConfiguration, analyticsHelper: PaymentSheetAnalyticsHelper) {
+    init(
+        mode: Mode,
+        intent: Intent,
+        elementsSession: STPElementsSession,
+        configuration: PaymentElementConfiguration,
+        logPayment: Bool = true,
+        analyticsHelper: PaymentSheetAnalyticsHelper
+    ) {
+        self.mode = mode
         self.intent = intent
+        self.logPayment = logPayment
         self.elementsSession = elementsSession
         self.configuration = configuration
         self.analyticsHelper = analyticsHelper
         self.paymentHandler = .init(apiClient: configuration.apiClient)
     }
 
-    func present(on viewController: UIViewController, completion: @escaping CompletionBlock) {
-        present(from: viewController, completion: completion)
+    func presentAsBottomSheet(
+        from presentingController: UIViewController,
+        shouldOfferApplePay: Bool,
+        hidingUnderlyingBottomSheet: Bool = true,
+        shouldFinishOnClose: Bool,
+        completion: @escaping (PaymentSheetResult, STPAnalyticsClient.DeferredIntentConfirmationType?, _ didFinish: Bool) -> Void
+    ) {
+        presentAsBottomSheetInternal(
+            from: presentingController,
+            shouldOfferApplePay: shouldOfferApplePay,
+            hidingUnderlyingBottomSheet: hidingUnderlyingBottomSheet,
+            shouldFinishOnClose: shouldFinishOnClose
+        ) { completionResult in
+            guard case .full(let result, let deferredIntentConfirmationType, let didFinish) = completionResult else {
+                return
+            }
+
+            completion(result, deferredIntentConfirmationType, didFinish)
+        }
     }
 
-    func present(
+    func presentForPaymentMethodSelection(
         from presentingController: UIViewController,
-        completion: @escaping PaymentSheetResultCompletionBlock
+        initiallySelectedPaymentDetailsID: String?,
+        shouldShowSecondaryCta: Bool = true,
+        completion: @escaping (_ confirmOption: PaymentSheet.LinkConfirmOption?, _ shouldReturnToPaymentSheet: Bool) -> Void
     ) {
-        // Similarly to `PKPaymentAuthorizationController`, `LinkController` should retain
-        // itself while presented.
-        self.selfRetainer = self
-        self.completion = completion
+        presentAsBottomSheetInternal(
+            from: presentingController,
+            shouldOfferApplePay: false,
+            hidingUnderlyingBottomSheet: true,
+            launchedFromFlowController: true,
+            initiallySelectedPaymentDetailsID: initiallySelectedPaymentDetailsID,
+            callToAction: .continue,
+            shouldFinishOnClose: false,
+            shouldShowSecondaryCta: shouldShowSecondaryCta
+        ) { completionResult in
+            guard case .paymentMethodSelection(let confirmOption, let shouldReturnToPaymentSheet) = completionResult else {
+                return
+            }
 
-        let payWithLinkViewController = PayWithLinkViewController(intent: intent,
-                                                                  elementsSession: elementsSession, configuration: configuration, analyticsHelper: analyticsHelper)
-        payWithLinkViewController.payWithLinkDelegate = self
-        if UIDevice.current.userInterfaceIdiom == .pad {
-            payWithLinkViewController.modalPresentationStyle = .formSheet
+            completion(confirmOption, shouldReturnToPaymentSheet)
         }
-        payWithLinkViewController.isModalInPresentation = true
+    }
 
-        presentingController.present(payWithLinkViewController, animated: true)
+    private func presentAsBottomSheetInternal(
+        from presentingController: UIViewController,
+        shouldOfferApplePay: Bool,
+        hidingUnderlyingBottomSheet: Bool = true,
+        launchedFromFlowController: Bool = false,
+        initiallySelectedPaymentDetailsID: String? = nil,
+        callToAction: ConfirmButton.CallToActionType? = nil,
+        shouldFinishOnClose: Bool,
+        shouldShowSecondaryCta: Bool = true,
+        completion: @escaping (CompletionResult) -> Void
+    ) {
+        self.selfRetainer = self
+
+        let targetBottomSheet = presentingController as? BottomSheetViewController ?? presentingController.bottomSheetController
+        let targetPresentationController = targetBottomSheet?.presentingViewController
+
+        let presentBottomSheet: (UIViewController) -> Void = { presentingController in
+            let payWithLinkVC = PayWithLinkViewController(
+                intent: self.intent,
+                linkAccount: LinkAccountContext.shared.account,
+                elementsSession: self.elementsSession,
+                configuration: self.configuration,
+                shouldOfferApplePay: shouldOfferApplePay,
+                shouldFinishOnClose: shouldFinishOnClose,
+                shouldShowSecondaryCta: shouldShowSecondaryCta,
+                launchedFromFlowController: launchedFromFlowController,
+                initiallySelectedPaymentDetailsID: initiallySelectedPaymentDetailsID,
+                callToAction: callToAction,
+                analyticsHelper: self.analyticsHelper
+            )
+
+            payWithLinkVC.payWithLinkDelegate = self
+            presentingController.presentAsBottomSheet(
+                payWithLinkVC,
+                appearance: self.configuration.appearance,
+                completion: {}
+            )
+
+            self.completion =  { completionResult in
+                payWithLinkVC.dismiss(animated: true)
+                completion(completionResult)
+
+                guard completionResult.shouldShowPaymentSheetAgain else {
+                    return
+                }
+                // Handle representing the previous bottom sheet
+                if let targetBottomSheet, let targetPresentationController, hidingUnderlyingBottomSheet {
+                    targetPresentationController.presentAsBottomSheet(targetBottomSheet, appearance: self.configuration.appearance)
+                }
+            }
+        }
+
+        // Dismiss the underlying bottom sheet
+        if let targetBottomSheet, let targetPresentationController, hidingUnderlyingBottomSheet {
+            targetBottomSheet.dismiss(animated: true) {
+                presentBottomSheet(targetPresentationController)
+            }
+        } else {
+            presentBottomSheet(presentingController)
+        }
     }
 
 }
@@ -66,6 +184,13 @@ final class PayWithNativeLinkController {
 @available(iOSApplicationExtension, unavailable)
 @available(macCatalystApplicationExtension, unavailable)
 extension PayWithNativeLinkController: PayWithLinkViewControllerDelegate {
+    func payWithLinkViewControllerDidFinish(
+        _ payWithLinkViewController: PayWithLinkViewController,
+        confirmOption: PaymentSheet.LinkConfirmOption
+    ) {
+        payWithLinkViewController.dismiss(animated: true)
+        completion?(.paymentMethodSelection(confirmOption: confirmOption))
+    }
 
     func payWithLinkViewControllerDidConfirm(
         _ payWithLinkViewController: PayWithLinkViewController,
@@ -82,19 +207,34 @@ extension PayWithNativeLinkController: PayWithLinkViewControllerDelegate {
             paymentOption: paymentOption,
             paymentHandler: paymentHandler,
             analyticsHelper: analyticsHelper,
-            completion: completion
+            completion: { result, confirmationType in
+                if self.logPayment {
+                    self.analyticsHelper.logPayment(paymentOption: paymentOption, result: result, deferredIntentConfirmationType: confirmationType)
+                }
+                completion(result, confirmationType)
+            }
         )
     }
 
-    func payWithLinkViewControllerDidCancel(_ payWithLinkViewController: PayWithLinkViewController) {
+    func payWithLinkViewControllerDidCancel(_ payWithLinkViewController: PayWithLinkViewController, shouldReturnToPaymentSheet: Bool) {
         payWithLinkViewController.dismiss(animated: true)
-        completion?(.canceled, nil)
+
+        let completionResult: CompletionResult = {
+            switch mode {
+            case .paymentMethodSelection:
+                return .paymentMethodSelection(confirmOption: nil, shouldReturnToPaymentSheet: shouldReturnToPaymentSheet)
+            case .full:
+                return .full(result: .canceled, deferredIntentConfirmationType: nil, didFinish: false)
+            }
+        }()
+
+        completion?(completionResult)
         selfRetainer = nil
     }
 
     func payWithLinkViewControllerDidFinish(_ payWithLinkViewController: PayWithLinkViewController, result: PaymentSheetResult, deferredIntentConfirmationType: STPAnalyticsClient.DeferredIntentConfirmationType?) {
         payWithLinkViewController.dismiss(animated: true)
-        completion?(result, deferredIntentConfirmationType)
+        completion?(.full(result: result, deferredIntentConfirmationType: deferredIntentConfirmationType, didFinish: true))
         selfRetainer = nil
     }
 
@@ -119,13 +259,13 @@ extension PayWithNativeLinkController: PayWithLinkWebControllerDelegate {
             integrationShape: .complete,
             analyticsHelper: analyticsHelper
         ) { result, deferredIntentConfirmationType in
-            self.completion?(result, deferredIntentConfirmationType)
+            self.completion?(.full(result: result, deferredIntentConfirmationType: deferredIntentConfirmationType, didFinish: true))
             self.selfRetainer = nil
         }
     }
 
     func payWithLinkWebControllerDidCancel() {
-        completion?(.canceled, nil)
+        completion?(.full(result: .canceled, deferredIntentConfirmationType: nil, didFinish: false))
         selfRetainer = nil
     }
 }

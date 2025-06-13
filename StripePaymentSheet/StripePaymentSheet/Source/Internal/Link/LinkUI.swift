@@ -25,11 +25,34 @@ enum LinkUI {
 
     // MARK: - Corner radii
 
+    static let largeCornerRadius: CGFloat = 24
+
     static let cornerRadius: CGFloat = 12
 
     static let mediumCornerRadius: CGFloat = 8
 
     static let smallCornerRadius: CGFloat = 4
+
+    // MARK: - Border
+
+    static let borderWidth: CGFloat = 1.5
+
+    static let highlightBorderConfiguration = HighlightBorderConfiguration(
+        width: borderWidth,
+        color: .linkBorderSelected,
+        animator: animator
+    )
+
+    // MARK: - Buttons
+
+    private static let minimumLabelHeight: CGFloat = 24
+
+    private static let minimumButtonHeight: CGFloat = 44
+
+    static func primaryButtonHeight(margins: NSDirectionalEdgeInsets) -> CGFloat {
+        let height = LinkUI.minimumLabelHeight + margins.top + margins.bottom
+        return max(height, minimumButtonHeight)
+    }
 
     // MARK: - Margins
 
@@ -37,7 +60,7 @@ enum LinkUI {
 
     static let compactButtonMargins: NSDirectionalEdgeInsets = .insets(top: 12, leading: 16, bottom: 12, trailing: 16)
 
-    static let contentMargins: NSDirectionalEdgeInsets = .insets(top: 22, leading: 20, bottom: 20, trailing: 20)
+    static let contentMargins: NSDirectionalEdgeInsets = .insets(top: 2, leading: 20, bottom: 20, trailing: 20)
 
     // MARK: - Content spacing
 
@@ -50,6 +73,27 @@ enum LinkUI {
     static let smallContentSpacing: CGFloat = 8
 
     static let tinyContentSpacing: CGFloat = 4
+
+    // MARK: - Navigation bar
+
+    static let navigationBarHeight: CGFloat = 70
+
+    static let navigationBarButtonSize: CGFloat = 32
+
+    static let navigationBarButtonContentSize: CGFloat = 12
+
+    // MARK: - Animations
+
+    static let animator: UIViewPropertyAnimator = {
+        let params = UISpringTimingParameters(
+            mass: 1.0,
+            dampingRatio: 0.93,
+            frequencyResponse: 0.22
+        )
+        let animator = UIViewPropertyAnimator(duration: 0, timingParameters: params)
+        animator.isInterruptible = true
+        return animator
+    }()
 }
 
 // MARK: Development flags
@@ -85,7 +129,7 @@ extension LinkUI {
     ) -> UIFont {
         switch textStyle {
         case .title:
-            return UIFont.systemFont(ofSize: 24, weight: .bold).scaled(
+            return UIFont.systemFont(ofSize: 24, weight: .semibold).scaled(
                 withTextStyle: .headline,
                 maximumPointSize: maximumPointSize,
                 compatibleWith: traitCollection
@@ -148,25 +192,36 @@ extension LinkUI {
 
     static let appearance: PaymentSheet.Appearance = {
         var appearance = PaymentSheet.Appearance.default
-        appearance.cornerRadius = LinkUI.mediumCornerRadius
-        appearance.colors.primary = .linkBrandDark
-        appearance.colors.background = .linkBackground
+        appearance.cornerRadius = LinkUI.cornerRadius
+        appearance.colors.primary = .linkBorderSelected
+        appearance.colors.background = .linkSurfacePrimary
 
         // Text
-        appearance.colors.text = .linkPrimaryText
-        appearance.colors.textSecondary = .linkSecondaryText
+        appearance.colors.text = .linkTextPrimary
+        appearance.colors.textSecondary = .linkTextSecondary
+
+        // Insets
+        appearance.textFieldInsets = NSDirectionalEdgeInsets(
+            top: LinkUI.smallContentSpacing,
+            leading: LinkUI.contentSpacing,
+            bottom: LinkUI.smallContentSpacing,
+            trailing: LinkUI.contentSpacing
+        )
 
         // Components
-        appearance.colors.componentText = .linkPrimaryText
-        appearance.colors.componentPlaceholderText = .linkSecondaryText
-        appearance.colors.componentBackground = .linkControlBackground
-        appearance.colors.componentBorder = .linkControlBorder
-        appearance.colors.componentDivider = .linkSeparator
+        appearance.colors.componentBorder = .linkSurfacePrimary
+        appearance.colors.componentText = .linkTextPrimary
+        appearance.colors.componentPlaceholderText = .linkTextSecondary
+        appearance.colors.componentBackground = .linkSurfaceSecondary
+        appearance.colors.componentBorder = .linkSurfaceSecondary
+        appearance.colors.componentDivider = .linkBorderDefault
+        appearance.colors.selectedComponentBorder = .linkBorderSelected
+        appearance.shadow = .disabled
 
         // Primary button
-        appearance.primaryButton.textColor = .linkPrimaryButtonForeground
-        appearance.primaryButton.backgroundColor = .linkBrand
-        appearance.primaryButton.successBackgroundColor = .linkBrand
+        appearance.primaryButton.textColor = .linkContentOnPrimaryButton
+        appearance.primaryButton.backgroundColor = .linkButtonBrand
+        appearance.primaryButton.successBackgroundColor = .linkButtonBrand
         appearance.primaryButton.borderWidth = 0
         appearance.primaryButton.cornerRadius = LinkUI.cornerRadius
         appearance.primaryButton.font = LinkUI.font(forTextStyle: .bodyEmphasized)

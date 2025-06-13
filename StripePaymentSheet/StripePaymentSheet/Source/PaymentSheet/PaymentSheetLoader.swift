@@ -96,13 +96,31 @@ final class PaymentSheetLoader {
                 let linkAccount = try? await lookupLinkAccount(elementsSession: elementsSession, configuration: configuration)
                 LinkAccountContext.shared.account = linkAccount
 
-                if let linkGlobalHoldbackExperiment = LinkGlobalHoldback(
-                    session: elementsSession,
-                    configuration: configuration,
-                    linkAccount: linkAccount,
-                    integrationShape: analyticsHelper.integrationShape
-                ) {
+                // Log experiment exposures
+                if let arbId = elementsSession.experimentsData?.arbId {
+                    let linkGlobalHoldbackExperiment = LinkGlobalHoldback(
+                        arbId: arbId,
+                        session: elementsSession,
+                        configuration: configuration,
+                        linkAccount: linkAccount,
+                        integrationShape: analyticsHelper.integrationShape
+                    )
                     analyticsHelper.logExposure(experiment: linkGlobalHoldbackExperiment)
+
+                    // Only log Link AB Test if Link is enabled
+                    if PaymentSheet.isLinkEnabled(
+                        elementsSession: elementsSession,
+                        configuration: configuration
+                    ) {
+                        let linkAbTestExperiment = LinkABTest(
+                            arbId: arbId,
+                            session: elementsSession,
+                            configuration: configuration,
+                            linkAccount: linkAccount,
+                            integrationShape: analyticsHelper.integrationShape
+                        )
+                        analyticsHelper.logExposure(experiment: linkAbTestExperiment)
+                    }
                 }
 
                 // Filter out payment methods that the PI/SI or PaymentSheet doesn't support
@@ -148,6 +166,9 @@ final class PaymentSheetLoader {
                 if integrationShape.shouldStartCheckoutMeasurementOnLoad {
                     analyticsHelper.startTimeMeasurement(.checkout)
                 }
+
+                // Initialize telemetry. Don't wait for this to finish to call completion.
+                STPTelemetryClient.shared.sendTelemetryData()
 
                 // Call completion
                 let loadResult = LoadResult(
@@ -378,11 +399,15 @@ final class PaymentSheetLoader {
               !ephemeralKey.isEmpty else {
             return []
         }
+
+        // We don't support Link payment methods with customer ephemeral keys
+        let types = PaymentSheet.supportedSavedPaymentMethods.filter { $0 != .link }
+
         return try await withCheckedThrowingContinuation { continuation in
             configuration.apiClient.listPaymentMethods(
                 forCustomer: customerID,
                 using: ephemeralKey,
-                types: PaymentSheet.supportedSavedPaymentMethods,
+                types: types,
                 limit: 100
             ) { paymentMethods, error in
                 guard var paymentMethods, error == nil else {

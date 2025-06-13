@@ -57,6 +57,7 @@ struct PaymentSheetTestPlayground: View {
         SettingView(setting: $playgroundController.settings.shakeAmbiguousViews)
         SettingView(setting: $playgroundController.settings.instantDebitsIncentives)
         SettingView(setting: $playgroundController.settings.fcLiteEnabled)
+        SettingView(setting: $playgroundController.settings.linkFlowControllerChanges)
     }
 
     var body: some View {
@@ -186,6 +187,7 @@ struct PaymentSheetTestPlayground: View {
                             }
                             SettingView(setting: $playgroundController.settings.formSheetAction)
                             SettingView(setting: $playgroundController.settings.embeddedViewDisplaysMandateText)
+                            SettingView(setting: $playgroundController.settings.rowSelectionBehavior)
                         }
                     }
 
